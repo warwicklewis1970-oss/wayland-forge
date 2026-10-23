@@ -404,7 +404,7 @@ $('imgFile').addEventListener('change', e => {
 });
 $('undoBtn').onclick = () => { if (hist.i > 0) restore(hist.stack[--hist.i]); };
 $('redoBtn').onclick = () => { if (hist.i < hist.stack.length - 1) restore(hist.stack[++hist.i]); };
-$('fitBtn').onclick = () => { view = { x: -40, y: -40, w: 1080, h: 1080 }; render(); };
+$('fitBtn').onclick = () => fitView();
 document.addEventListener('keydown', e => {
   if (e.target.matches('input[type=text]')) return;
   const k = e.key.toLowerCase();
@@ -561,9 +561,36 @@ function exportUI() {
 }
 exportUI();
 const panel = $('panel');
-const setSheet = open => { panel.classList.toggle('open', open); $('panelToggle').setAttribute('aria-expanded', open); };
-$('panelToggle').onclick = () => setSheet(!panel.classList.contains('open'));
-panel.addEventListener('click', e => { if (e.target === panel && e.offsetY < 38 && matchMedia('(max-width:820px)').matches) setSheet(!panel.classList.contains('open')); });
+// mobile sheet: snap points collapsed / small (~38%) / tall (~70%); stage re-fits above it
+const isSheet = () => matchMedia('(max-width:820px) and (orientation:portrait)').matches;
+const SNAPS = { collapsed: () => 34, small: () => innerHeight * 0.38, tall: () => innerHeight * 0.70 };
+function fitView() { view = { x: -40, y: -40, w: 1080, h: 1080 }; render(); }
+function setSnap(name) {
+  panel.dataset.snap = name; panel.style.setProperty('--sheet', name === 'small' ? '38dvh' : name === 'tall' ? '70dvh' : '34px');
+  if (name === 'collapsed') panel.scrollTop = 0;
+  $('panelToggle').setAttribute('aria-expanded', name !== 'collapsed'); fitView();
+}
+const setSheet = open => setSnap(open ? 'small' : 'collapsed');
+panel.addEventListener('click', e => { if (isSheet() && panel.dataset.snap === 'collapsed' && !e.target.closest('#sheetHandle')) setSnap('small'); });
+$('panelToggle').onclick = () => setSheet(panel.dataset.snap === 'collapsed');
+(() => {
+  const hd = $('sheetHandle'); let st = null;
+  hd.addEventListener('pointerdown', e => { if (!isSheet()) return; hd.setPointerCapture(e.pointerId); st = { y: e.clientY, h: panel.getBoundingClientRect().height, moved: false }; panel.classList.add('dragging'); });
+  hd.addEventListener('pointermove', e => {
+    if (!st) return; const dy = st.y - e.clientY; if (Math.abs(dy) > 4) st.moved = true; if (!st.moved) return;
+    panel.style.setProperty('--sheet', Math.max(34, Math.min(innerHeight * 0.8, st.h + dy)) + 'px');
+  });
+  const end = () => {
+    if (!st) return; panel.classList.remove('dragging');
+    const order = ['collapsed', 'small', 'tall'];
+    if (!st.moved) setSnap(order[(order.indexOf(panel.dataset.snap) + 1) % 3]);
+    else { const h = panel.getBoundingClientRect().height; setSnap(order.reduce((a, n) => Math.abs(SNAPS[n]() - h) < Math.abs(SNAPS[a]() - h) ? n : a, 'small')); }
+    st = null;
+  };
+  hd.addEventListener('pointerup', end); hd.addEventListener('pointercancel', end);
+  hd.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const o = ['collapsed', 'small', 'tall']; setSnap(o[(o.indexOf(panel.dataset.snap) + 1) % 3]); } });
+  let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(fitView, 120); });
+})();
 
 // ---------- install / offline ----------
 let deferred = null;
