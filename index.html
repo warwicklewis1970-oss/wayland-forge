@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wayland Forge</title>
+<meta name="theme-color" content="#1d1a17">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/anvil.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <img src="icons/anvil.svg" alt="" class="logo"><h1>Wayland Forge</h1>
+  <div class="spacer"></div>
+  <button id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="tl"> Undo</span></button>
+  <button id="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷<span class="tl"> Redo</span></button>
+  <button id="multiBtn" class="multitog" aria-pressed="false" title="Multi-select: plain clicks/taps add or remove letters (or hold Shift/Ctrl/⌘)">✚<span class="tl"> Multi-select</span></button>
+  <span id="selCount" class="badge" hidden></span>
+  <button id="dragMode" title="What dragging empty space does: box-select letters or pan the view (middle-drag or Space-drag always pans)">▭<span class="tl"> Box</span></button>
+  <button id="fitBtn" title="Reset view" aria-label="Fit view">⤢<span class="tl"> Fit</span></button>
+  <button id="quickExport" class="accent" title="Export with the settings in the Export section">⬇<span class="tl"> Export</span></button>
+  <button id="installBtn" class="accent" hidden title="Install as an app">⊕<span class="tl"> Install</span></button>
+  <button id="panelToggle" class="mobile-only" aria-expanded="false" title="Show controls">☰</button>
+</header>
+<main>
+  <section id="stageWrap">
+    <svg id="stage" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"></svg>
+    <div class="stagehint">Click letters (Shift/Ctrl/⌘ or Multi-select to add) · drag to move · box-drag empty space · Space/middle-drag pans · scroll zooms</div>
+    <div id="loading">Loading fonts…</div>
+  </section>
+  <aside id="panel">
+    <details name="acc" id="sec-shape"><summary>Shape</summary><div class="body">
+      <div class="g2">
+        <label><span>Type</span><select data-b="base.shape"><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option></select></label>
+        <div class="checks"><label class="chk"><input type="checkbox" data-b="base.outer">Outer</label><label class="chk"><input type="checkbox" data-b="base.inner">Inner</label></div>
+      </div>
+      <label class="rg"><span>Width</span><input type="range" min="150" max="470" step="1" data-b="base.rx"><output></output></label>
+      <label class="rg" data-shapes="ellipse polygon star heart"><span>Height</span><input type="range" min="150" max="470" step="1" data-b="base.ry"><output></output></label>
+      <label class="rg" data-shapes="polygon"><span>Sides</span><input type="range" min="3" max="12" step="1" data-b="base.sides"><output></output></label>
+      <label class="rg" data-shapes="star"><span>Points</span><input type="range" min="3" max="12" step="1" data-b="base.points"><output></output></label>
+      <label class="rg" data-shapes="star"><span>Inner depth</span><input type="range" min="0.25" max="0.9" step="0.01" data-b="base.innerRatio"><output></output></label>
+      <label class="rg" data-shapes="heart"><span>Dip depth</span><input type="range" min="0" max="1" step="0.01" data-b="base.dip"><output></output></label>
+      <label class="rg" data-shapes="polygon star heart"><span>Corners</span><input type="range" min="0" max="120" step="1" data-b="base.corner"><output></output></label>
+      <label class="rg" data-shapes="polygon star heart" title="Rounds the path letters follow at points and dips; printed lines keep Corners"><span>Text smooth</span><input type="range" min="0" max="250" step="1" data-b="base.smooth"><output></output></label>
+      <label class="rg"><span>Ring gap</span><input type="range" min="40" max="250" step="1" data-b="base.gap"><output></output></label>
+      <div id="gapWarn" class="hint" hidden></div>
+      <label class="rg"><span>Line width</span><input type="range" min="0" max="30" step="1" data-b="base.width"><output></output></label>
+      <div class="g2">
+        <label><span>Line</span><input type="color" data-b="base.stroke" class="col"></label>
+        <label class="chk"><input type="checkbox" data-b="base.fillOn">Fill <input type="color" data-b="base.fill" class="col"></label>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-text"><summary>Text layers</summary><div class="body">
+      <div class="row"><select id="layerSel" class="grow" aria-label="Text layer"></select><button id="addLayer" title="Add text layer">+ Add</button></div>
+      <div id="layerFields">
+        <label class="full"><span>Text</span><input type="text" data-b="layer.text" maxlength="80"></label>
+        <div class="g2">
+          <label><span>Font</span><select data-b="layer.font" id="fontSel"></select></label>
+          <label><span>Colour</span><input type="color" data-b="layer.color" class="col"></label>
+          <label><span>Side</span><select data-b="layer.side"><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+          <label><span>Sits</span><select data-b="layer.ring"><option value="between">Between lines</option><option value="outer">Outside outer</option><option value="inner">Inside inner</option></select></label>
+        </div>
+        <label class="rg"><span>Size</span><input type="range" min="16" max="200" step="1" data-b="layer.size"><output></output></label>
+        <label class="rg"><span>Rotate</span><input type="range" min="-180" max="180" step="1" data-b="layer.offset"><output></output></label>
+        <label class="rg"><span>Spacing</span><input type="range" min="-20" max="80" step="1" data-b="layer.spacing"><output></output></label>
+        <label class="rg"><span>Lift</span><input type="range" min="-80" max="80" step="1" data-b="layer.lift"><output></output></label>
+        <div class="row"><button id="dupOpp" class="grow">Duplicate to opposite side</button><button id="delLayer" class="danger">Delete</button></div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-letter"><summary>Letter edit</summary><div class="body">
+      <div class="row"><button id="multiBtn2" class="multitog grow" aria-pressed="false">✚ Multi-select: off</button><button id="selAll" class="grow">Select all in layer</button></div>
+      <div id="letterNone" class="hint">Click a letter to select it. Shift/Ctrl/⌘-click, or switch Multi-select on, to add or remove letters anywhere. You can also drag a box on empty space. Esc clears the selection.</div>
+      <div id="letterBox">
+        <div class="hint"><b id="letterName"></b> <button id="clearSel" class="mini">Clear</button></div>
+        <label class="rg"><span>Rotate ±</span><input type="range" min="-180" max="180" step="1" data-rel="rot"><output></output></label>
+        <label class="rg"><span>Scale ×</span><input type="range" min="0.3" max="2.5" step="0.05" data-rel="scale"><output></output></label>
+        <div class="row nudge"><span class="hint">Nudge</span><button data-nudge="-1,0">←</button><button data-nudge="0,-1">↑</button><button data-nudge="0,1">↓</button><button data-nudge="1,0">→</button></div>
+        <div class="row"><button id="resetLetter" class="grow">Reset selected</button><button id="resetLetters" class="grow">Reset layer</button></div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-orn"><summary>Ornaments</summary><div class="body">
+      <div class="row"><button id="addStar" class="grow">+ Star</button><button id="addDot" class="grow">+ Dot</button><button id="clearOrn" class="danger">Clear all</button></div>
+      <div id="ornNone" class="hint">Click an ornament to edit it.</div>
+      <div id="ornFields">
+        <label class="rg"><span>Size</span><input type="range" min="4" max="120" step="1" data-b="orn.r"><output></output></label>
+        <label class="rg"><span>Rotation</span><input type="range" min="-180" max="180" step="1" data-b="orn.rot"><output></output></label>
+        <div class="row"><label><span>Colour</span><input type="color" data-b="orn.color" class="col"></label><button id="mirrorOrn" class="grow">Mirror copy</button><button id="delOrn" class="danger">Delete</button></div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-img"><summary>Centre image</summary><div class="body">
+      <div class="row"><label class="filebtn grow">Upload…<input type="file" id="imgFile" accept="image/*" hidden></label><button id="centreImg">Centre</button><button id="delImg" class="danger">Remove</button></div>
+      <div id="imgFields">
+        <label class="rg"><span>Size</span><input type="range" min="40" max="1000" step="1" data-b="img.size"><output></output></label>
+        <label class="chk"><input type="checkbox" data-b="img.clip">Clip to inner line</label>
+        <label><span>Style</span><select data-b="img.mode"><option value="orig">Original picture</option><option value="sil">Silhouette (solid cutout)</option><option value="trace">Vector trace (SVG paths)</option></select></label>
+        <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.removeBg">Remove background (corner colour)</label>
+        <label class="rg" data-imgmodes="orig"><span>Tolerance</span><input type="range" min="5" max="200" step="1" data-b="img.tol"><output></output></label>
+        <div class="g2" data-imgmodes="sil trace">
+          <label><span>Background</span><select data-b="img.bgMode"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+          <label><span>Fill</span><input type="color" data-b="img.color" class="col"></label>
+        </div>
+        <label class="rg" data-imgmodes="sil trace"><span>Threshold</span><input type="range" min="10" max="245" step="1" data-b="img.threshold"><output></output></label>
+        <label class="rg" data-imgmodes="sil trace"><span>Smoothing</span><input type="range" min="0" max="5" step="1" data-b="img.smooth"><output></output></label>
+        <label class="chk" data-imgmodes="sil trace"><input type="checkbox" data-b="img.invert">Invert (negative cutout)</label>
+        <div class="hint" data-imgmodes="trace" id="traceInfo">Traced shapes export as true vector paths in SVG and PDF.</div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-col"><summary>Colours &amp; background</summary><div class="body">
+      <div class="g2">
+        <label><span>Background</span><select data-b="doc.bg"><option value="transparent">Transparent</option><option value="color">Solid</option></select></label>
+        <label><span>Colour</span><input type="color" data-b="doc.bgColor" class="col"></label>
+      </div>
+      <div id="swatches"></div>
+      <div class="row"><input type="color" id="swatchPick" value="#c0392b" class="col" aria-label="New swatch colour"><button id="addSwatch" class="grow">+ Save swatch</button></div>
+      <div class="hint">Click a swatch to colour the selected ornament or text layer.</div>
+    </div></details>
+    <details name="acc" id="sec-export"><summary>Export</summary><div class="body">
+      <div class="g2">
+        <label><span>Format</span><select id="exFmt"><option value="svg">SVG vector</option><option value="pdf">PDF vector</option><option value="png">PNG</option></select></label>
+        <label><span>Preset</span><select id="exPreset"><option value="">Custom</option><option value="printify">Printify 4500px</option><option value="100mm">100 mm</option><option value="4in">4 in</option><option value="a4">A4 page</option></select></label>
+      </div>
+      <div class="g3">
+        <label><span>W</span><input type="number" id="exW" value="100" min="1" step="0.5"></label>
+        <label><span>H</span><input type="number" id="exH" value="100" min="1" step="0.5"></label>
+        <label><span>Unit</span><select id="exUnit"><option value="mm">mm</option><option value="in">in</option></select></label>
+        <label><span>Bleed</span><input type="number" id="exBleed" value="0" min="0" step="0.5"></label>
+        <label><span>DPI</span><input type="number" id="exDpi" value="300" min="72" max="1200"></label>
+        <input type="checkbox" id="exPrintify" hidden>
+      </div>
+      <button id="exportBtn" class="accent wide">Export</button>
+      <div id="exInfo" class="hint"></div>
+    </div></details>
+    <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
+      <div class="row"><button id="saveProj" class="grow">Save</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
+      <div class="hint">Autosaves in this browser. Fonts: SIL Open Font License.</div>
+    </div></details>
+  </aside>
+</main>
+<script src="vendor/opentype.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/svg2pdf.umd.min.js"></script>
+<script src="vendor/imagetracer.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
