@@ -4,7 +4,7 @@
   const cfg = Object.assign({ icon: true, tips: true, offered: false, tipSeen: {} }, (() => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } })());
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) { /* ignore */ } };
   const smith = (pose, cls) => WFSmith.svg(pose).replace('class="wf-smith"', `class="wf-smith ${cls || ''}"`);
-  const head = () => WFSmith.svg('wave').replace('viewBox="0 0 170 190"', 'viewBox="42 18 76 76"').replace('class="wf-smith"', 'class="wf-smith head"');
+  const head = () => WFSmith.svg('wave').replace('viewBox="0 0 170 190"', 'viewBox="38 22 84 84"').replace('class="wf-smith"', 'class="wf-smith head"');
   const vis = el => { if (!el) return false; const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; for (let e = el; e; e = e.parentElement) { if (e.hidden) return false; const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden') return false; } return true; };
   const pick = (...sels) => { for (const s of sels) { const e = typeof s === 'function' ? s() : document.querySelector(s); if (e && (e.getBoundingClientRect || e.rect)) { if (e.rect || vis(e)) return e; } } return null; };
   const lbl = s => () => { const e = document.querySelector(s); return e && (e.closest('label') || e); };
