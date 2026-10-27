@@ -93,8 +93,9 @@
     <details name="acc" id="sec-img"><summary>Centre image</summary><div class="body">
       <div class="row"><label class="filebtn grow">Upload…<input type="file" id="imgFile" accept="image/*" hidden></label><button id="centreImg">Centre</button><button id="delImg" class="danger">Remove</button></div>
       <div id="imgFields">
-        <label class="rg"><span>Size</span><input type="range" min="40" max="1000" step="1" data-b="img.size"><output></output></label>
-        <label class="chk"><input type="checkbox" data-b="img.clip">Clip to inner line</label>
+        <label class="rg"><span>Size</span><input type="range" min="40" max="1600" step="1" data-b="img.size"><output></output></label>
+        <label class="chk big"><input type="checkbox" data-b="img.clip">Clip to inner line <span class="dim">(crop anything outside it)</span></label>
+        <div class="row"><button id="fitImg" class="grow" title="Scale and centre so the whole image sits inside the inner line">⤢ Fit inside line</button><button id="fillImg" class="grow" title="Scale to cover the inner shape and clip it to the line">◉ Fill &amp; clip</button></div>
         <label><span>Style</span><select data-b="img.mode"><option value="orig">Original picture</option><option value="sil">Silhouette (solid cutout)</option><option value="trace">Vector trace (SVG paths)</option></select></label>
         <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.removeBg">Remove background (corner colour)</label>
         <label class="rg" data-imgmodes="orig"><span>Tolerance</span><input type="range" min="5" max="200" step="1" data-b="img.tol"><output></output></label>

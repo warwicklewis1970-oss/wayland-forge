@@ -79,3 +79,7 @@ button.mini{padding:1px 7px;font-size:11px;margin-left:6px}
 .row.nudge button{min-width:34px}
 #stage.panning{cursor:grabbing}
 @media (max-width:480px){header h1{display:none}header button{padding:4px 8px}}
+
+/* centre-image clip toggle: large touch target */
+.chk.big{min-height:34px;font-size:13px;cursor:pointer}.chk.big input{width:20px;height:20px;flex:none}.chk .dim{color:var(--dim);font-size:11px}
+@media (pointer:coarse){.chk{min-height:36px}.chk input[type=checkbox]{width:22px;height:22px}}

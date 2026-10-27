@@ -251,20 +251,56 @@ function procImage(im) {
 }
 function hexRgb(h) { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ? parseInt(m[1], 16) : 0; return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
 
+
+// ---------- centre image: clip geometry + fit/fill ----------
+// Inner-line geometry (identical to the drawn inner line), used whether or not the inner line is drawn.
+function innerClipEl() { return shapeEl(-S.base.gap, '') || shapeEl(0, ''); } // exactly the drawn inner line
+function imgAspect(im) { // content width/height of the image as drawn (meet inside the size×size box)
+  const pr = procImage(im); if (pr && pr.paths) return pr.w / pr.h;
+  const el = loadedImg(im.src); return el ? el.naturalWidth / el.naturalHeight : 1;
+}
+function innerProbe() { // temporary SVG path of the inner line for hit testing
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.setAttribute('visibility', 'hidden');
+  g.innerHTML = innerClipEl(); stage.appendChild(g); const el = g.firstElementChild; return { el, bb: el.getBBox(), done: () => g.remove() };
+}
+// Largest image (keeping aspect) that sits entirely inside the inner line; returns {x,y,size}.
+function fitInside(im) {
+  const a = imgAspect(im), P = innerProbe(), bb = P.bb, sv = stage;
+  const pt = sv.createSVGPoint(), inside = (x, y) => { pt.x = x; pt.y = y; return P.el.isPointInFill(pt); };
+  const ok = (cx, cy, s) => { const w = a >= 1 ? s : s * a, h = a >= 1 ? s / a : s, n = 24;
+    for (let i = 0; i <= n; i++) { const t = i / n, x = cx - w / 2 + w * t, y = cy - h / 2 + h * t;
+      if (!inside(x, cy - h / 2) || !inside(x, cy + h / 2) || !inside(cx - w / 2, y) || !inside(cx + w / 2, y)) return false; }
+    return true; };
+  let best = { x: C, y: C, size: 40 };
+  const cx = bb.x + bb.width / 2;
+  for (let k = -6; k <= 6; k++) { const cy = bb.y + bb.height / 2 + k * bb.height / 30; if (!inside(cx, cy)) continue;
+    let lo = 0, hi = Math.max(bb.width, bb.height) * Math.max(a, 1 / a);
+    for (let it = 0; it < 22; it++) { const m = (lo + hi) / 2; if (ok(cx, cy, m)) lo = m; else hi = m; }
+    if (lo > best.size) best = { x: cx, y: cy, size: lo }; }
+  P.done(); best.size = Math.floor(best.size * 0.97); return best; // small margin off the line
+}
+// Smallest image that covers the whole inner shape (so the clip crops it neatly to the line).
+function fillInner(im) {
+  const a = imgAspect(im), P = innerProbe(), bb = P.bb; P.done();
+  const s = Math.ceil(Math.max(bb.width, bb.height, a >= 1 ? bb.height * a : bb.width / a) + 4);
+  return { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, size: s };
+}
+
 // ---------- SVG builder (shared by editor and exports) ----------
 function buildArt(editor) {
   const b = S.base, out = [];
   if (b.fillOn) out.push(shapeEl(0, `fill="${b.fill}"`));
   if (S.image) {
-    const im = S.image, clip = im.clip && b.inner, pr = procImage(im), ek = editor ? ' data-k="img"' : '';
-    if (clip) out.push(`<clipPath id="wfclip">${shapeEl(-b.gap, '')}</clipPath>`);
+    const im = S.image, clip = !!im.clip, pr = procImage(im), ek = editor ? ' data-k="img"' : '';
+    const cid = editor ? 'wfclip-ed' : 'wfclip-ex'; // distinct ids: editor + export holder can coexist in the DOM
+    if (clip) out.push(`<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse">${innerClipEl()}</clipPath></defs>`);
     let el;
     if (pr && pr.paths) { // vector trace: real paths, fitted like preserveAspectRatio=meet
       const k = im.size / Math.max(pr.w, pr.h), x0 = im.x - pr.w * k / 2, y0 = im.y - pr.h * k / 2;
       el = `<g transform="translate(${f2(x0)} ${f2(y0)}) scale(${+k.toFixed(5)})" fill="${im.color}" fill-rule="evenodd"${ek}>` +
         (editor ? `<rect width="${pr.w}" height="${pr.h}" fill="none" pointer-events="all"/>` : '') + pr.paths.map(d => `<path d="${d}"/>`).join('') + '</g>';
     } else el = `<image href="${esc(pr && pr.url ? pr.url : im.src)}" x="${f2(im.x - im.size / 2)}" y="${f2(im.y - im.size / 2)}" width="${im.size}" height="${im.size}" preserveAspectRatio="xMidYMid meet"${ek}/>`;
-    out.push(`<g${clip ? ' clip-path="url(#wfclip)"' : ''}>${el}</g>`);
+    out.push(`<g${clip ? ` clip-path="url(#${cid})"` : ''}>${el}</g>`);
     if (editor && sel.img) out.push(`<rect x="${im.x - im.size / 2}" y="${im.y - im.size / 2}" width="${im.size}" height="${im.size}" fill="none" stroke="#e0a043" stroke-dasharray="8 6" stroke-width="2" pointer-events="none"/>`);
   }
   if (b.width > 0) {
@@ -388,6 +424,8 @@ act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, i
 act('delOrn', () => { S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
 act('clearOrn', () => { S.ornaments = []; });
 act('centreImg', () => { if (S.image) { S.image.x = C; S.image.y = C; } });
+act('fitImg', () => { if (S.image) Object.assign(S.image, fitInside(S.image)); });
+act('fillImg', () => { if (S.image) Object.assign(S.image, fillInner(S.image), { clip: true }); });
 act('delImg', () => { S.image = null; });
 act('addSwatch', () => { const c = $('swatchPick').value; if (!S.swatches.includes(c)) S.swatches.push(c); });
 act('newProj', () => { if (confirm('Start a new design? Unsaved work will be replaced.')) { S = defaults(); sel = { layer: S.layers[0].id, letters: [], orn: null, img: false }; } });
@@ -399,7 +437,11 @@ $('swatches').addEventListener('click', e => {
 $('imgFile').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   const r = new FileReader();
-  r.onload = () => { S.image = Object.assign(imgDefaults(), { src: r.result, x: C, y: C, size: Math.max(80, (S.base.rx - S.base.gap) * 2), clip: true }); sel.img = true; sel.orn = null; update(); commit(); };
+  r.onload = () => {
+    const src = r.result, el = new Image();
+    el.onload = () => { imgEls.set(src, el); S.image = Object.assign(imgDefaults(), { src, x: C, y: C, size: 200, clip: true }); Object.assign(S.image, fitInside(S.image)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
+    el.onerror = () => alert('Could not read that image.'); el.src = src;
+  };
   r.readAsDataURL(file); e.target.value = '';
 });
 $('undoBtn').onclick = () => { if (hist.i > 0) restore(hist.stack[--hist.i]); };
@@ -600,7 +642,7 @@ window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; }
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW failed', err)));
 
 // ---------- boot ----------
-window.WF = { get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, doExport, update, maxInnerGap };
+window.WF = { fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, doExport, update, maxInnerGap };
 (async () => {
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); }));
   try { const saved = JSON.parse(localStorage.getItem(STORE) || 'null'); if (saved && Array.isArray(saved.layers)) { S = sanitize(saved); fixSel(); } } catch (e) { /* ignore bad autosave */ }
