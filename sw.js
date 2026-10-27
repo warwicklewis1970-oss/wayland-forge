@@ -1,7 +1,7 @@
 // Wayland Forge service worker: cache everything for offline use.
-const VERSION = 'wayland-forge-v8';
+const VERSION = 'wayland-forge-v9';
 const ASSETS = [
-  './', './index.html', './style.css', './js/app.js', './manifest.webmanifest',
+  './', './index.html', './style.css', './js/app.js', './js/blacksmith.js', './js/tour.js', './manifest.webmanifest',
   './vendor/opentype.min.js', './vendor/jspdf.umd.min.js', './vendor/svg2pdf.umd.min.js', './vendor/imagetracer.js',
   './icons/anvil.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png',
   "./fonts/AlfaSlabOne-Regular.ttf",

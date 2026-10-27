@@ -12,7 +12,7 @@
 </head>
 <body>
 <header>
-  <img src="icons/anvil.svg" alt="" class="logo"><h1>Wayland Forge</h1>
+  <img src="icons/anvil.svg" alt="" class="logo"><button id="helpBtn" title="Help &amp; tutorial (Wayland the blacksmith)" aria-label="Help and tutorial"></button><h1>Wayland Forge</h1>
   <div class="spacer"></div>
   <button id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="tl"> Undo</span></button>
   <button id="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷<span class="tl"> Redo</span></button>
@@ -136,6 +136,11 @@
     </div></details>
     <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
       <div class="row"><button id="saveProj" class="grow">Save</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
+      <div class="helpbox"><b>Help &amp; tutorial</b>
+        <div class="row"><button id="helpTour" class="grow">▶ Start the tour</button><button id="helpTopics" class="grow">Pick a topic…</button></div>
+        <label class="chk"><input type="checkbox" id="helpIconChk">Show the blacksmith help button in the toolbar</label>
+        <label class="chk"><input type="checkbox" id="helpTipsChk">Show tips (a short hint the first time you open each section)</label>
+      </div>
       <div class="hint">Autosaves in this browser. Fonts: SIL Open Font License.</div>
     </div></details>
   </aside>
@@ -145,5 +150,7 @@
 <script src="vendor/svg2pdf.umd.min.js"></script>
 <script src="vendor/imagetracer.js"></script>
 <script src="js/app.js"></script>
+<script src="js/blacksmith.js"></script>
+<script src="js/tour.js"></script>
 </body>
 </html>
