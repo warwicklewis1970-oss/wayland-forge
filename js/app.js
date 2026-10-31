@@ -20,7 +20,7 @@ const defaults = () => ({
   base: { shape: 'circle', rx: 400, ry: 400, sides: 6, points: 5, innerRatio: 0.55, dip: 0.45, corner: 14, smooth: 80, gap: 120, width: 8, stroke: '#1b1b1b', outer: true, inner: true, fillOn: false, fill: '#f4ede0' },
   layers: [newLayer('WAYLAND FORGE', 'top'), newLayer('EST. 2026', 'bottom')],
   ornaments: [{ id: uid(), type: 'star', x: 160, y: 500, r: 22, rot: 0, color: '#1b1b1b' }, { id: uid(), type: 'star', x: 840, y: 500, r: 22, rot: 0, color: '#1b1b1b' }],
-  image: null,
+  image: null, laser: {},
   swatches: ['#1b1b1b', '#ffffff', '#e0a043', '#8b1e1e', '#1e4d8b', '#2f6b3a']
 });
 let S = defaults();
@@ -339,7 +339,7 @@ let view = { x: -40, y: -40, w: 1080, h: 1080 };
 function render() {
   const bgFill = S.bg === 'color' ? S.bgColor : 'none';
   stage.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
-  stage.innerHTML = `<rect x="0" y="0" width="${ART}" height="${ART}" fill="${bgFill}" stroke="#6b5f50" stroke-dasharray="6 6" data-k="bg"/>` + buildArt(true);
+  stage.innerHTML = `<rect x="0" y="0" width="${ART}" height="${ART}" fill="${bgFill}" stroke="#6b5f50" stroke-dasharray="6 6" data-k="bg"/>` + buildArt(true) + laserOverlay();
   persist();
 }
 function syncUI() {
@@ -371,6 +371,7 @@ function syncUI() {
   $('ornFields').hidden = !curOrn(); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
   $('imgFields').hidden = !S.image;
   $('swatches').innerHTML = S.swatches.map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
+  laserUI();
   $('undoBtn').disabled = hist.i <= 0; $('redoBtn').disabled = hist.i >= hist.stack.length - 1;
 }
 function target(scope) {
@@ -391,7 +392,8 @@ function sanitize(raw) {
     base: Object.assign({}, d.base, o.base || {}), swatches: Array.isArray(o.swatches) ? o.swatches : d.swatches,
     layers: Array.isArray(o.layers) ? o.layers.map(l => Object.assign(newLayer('', 'top'), l)) : d.layers,
     ornaments: Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && (x.type === 'star' || x.type === 'dot')) : d.ornaments,
-    image: o.image && o.image.src ? Object.assign(imgDefaults(), o.image) : null };
+    image: o.image && o.image.src ? Object.assign(imgDefaults(), o.image) : null,
+    laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {} };
   if (!['circle', 'ellipse', 'polygon', 'star', 'heart'].includes(st.base.shape)) st.base.shape = 'circle';
   return st; // anything else in old data (frames, templates, packs…) is dropped
 }
@@ -634,6 +636,146 @@ $('panelToggle').onclick = () => setSheet(panel.dataset.snap === 'collapsed');
   let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(fitView, 120); });
 })();
 
+// ---------- laser pack (LaserGRBL): one file per job, all on the same mm page ----------
+const ROLES = [['off', 'Skip'], ['image', 'Image (photo engrave)'], ['etch', 'Etch (fill)'], ['cutin', 'Cut inside edge'], ['cutout', 'Cut outside edge']];
+function laserItems() {
+  const b = S.base, it = [];
+  if (b.outer) it.push({ key: 'outer', name: 'Outer line', def: 'cutout' });
+  if (b.inner) it.push({ key: 'inner', name: 'Inner line', def: 'etch' });
+  if (b.fillOn) it.push({ key: 'fill', name: 'Shape fill', def: 'off' });
+  for (const L of S.layers) if (L.text) it.push({ key: 't:' + L.id, name: 'Text: ' + L.text, def: 'etch' });
+  if (S.ornaments.length) it.push({ key: 'orn', name: 'Stars & dots', def: 'etch' });
+  if (S.image) it.push({ key: 'img', name: 'Centre image' + (S.image.mode === 'trace' ? ' (trace)' : S.image.mode === 'sil' ? ' (silhouette)' : ''), def: S.image.mode === 'trace' ? 'etch' : 'image' });
+  return it;
+}
+const roleOf = it => S.laser[it.key] || it.def;
+function ringD(d) {
+  const b = S.base;
+  if (FILLET.includes(b.shape)) return filletD(safeOffset(baseGeo(), d, 0).g);
+  const rx = b.rx + d, ry = (b.shape === 'circle' ? b.rx : b.ry) + d; if (rx <= 0.5 || ry <= 0.5) return '';
+  return `M${f2(C - rx)} ${C}A${f2(rx)} ${f2(ry)} 0 1 0 ${f2(C + rx)} ${C}A${f2(rx)} ${f2(ry)} 0 1 0 ${f2(C - rx)} ${C}Z`;
+}
+function imgBox(im) { const a = imgAspect(im), w = a >= 1 ? im.size : im.size * a, h = a >= 1 ? im.size / a : im.size; return `M${f2(im.x - w / 2)} ${f2(im.y - h / 2)}h${f2(w)}v${f2(h)}h${f2(-w)}Z`; }
+// Markup (artwork units) for one item. kind: 'pic' (as it looks), 'fill' (solid black shapes), 'cutout' / 'cutin' (outline paths, no style).
+function laserPart(it, kind) {
+  const b = S.base, k = it.key, cut = kind === 'cutout' || kind === 'cutin';
+  if (k === 'outer' || k === 'inner') {
+    const d0 = k === 'outer' ? 0 : -b.gap, w = b.width / 2;
+    if (cut) { const d = ringD(kind === 'cutout' ? d0 + w : d0 - w); return d ? `<path d="${d}"/>` : ''; }
+    return w > 0 ? `<path d="${ringD(d0 + w)}${ringD(d0 - w)}" fill-rule="evenodd"${kind === 'pic' ? ` fill="${b.stroke}"` : ''}/>` : '';
+  }
+  if (k === 'fill') return `<path d="${ringD(0)}"${kind === 'pic' ? ` fill="${b.fill}"` : ''}/>`;
+  if (k === 'orn') return S.ornaments.map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})"${kind === 'pic' ? ` fill="${o.color}"` : ''}>${o.type === 'star' ? `<path d="${starD(o.r)}"/>` : `<circle r="${o.r}"/>`}</g>`).join('');
+  if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? ` fill="${L.color}"` : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
+  if (k === 'img' && S.image) {
+    const im = S.image, pr = procImage(im), vec = pr && pr.paths;
+    if (cut && (im.clip || !vec)) return `<path d="${im.clip ? (innerClipEl().match(/ d="([^"]+)"/) || [, ringD(-b.gap)])[1] || ringD(-b.gap) : imgBox(im)}"/>`;
+    if (vec && (cut || kind === 'fill')) { const s = im.size / Math.max(pr.w, pr.h);
+      return `<g transform="translate(${f2(im.x - pr.w * s / 2)} ${f2(im.y - pr.h * s / 2)}) scale(${+s.toFixed(5)})" fill-rule="evenodd">${pr.paths.map(d => `<path d="${d}"/>`).join('')}</g>`; }
+    const cid = 'wflz' + uid(); // raster picture (also used for "etch" of a photo/silhouette: it goes in the etch PNG)
+    const el = `<image href="${esc(pr && pr.url ? pr.url : im.src)}" x="${f2(im.x - im.size / 2)}" y="${f2(im.y - im.size / 2)}" width="${im.size}" height="${im.size}" preserveAspectRatio="xMidYMid meet"/>`;
+    return im.clip ? `<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse">${innerClipEl()}</clipPath></defs><g clip-path="url(#${cid})">${el}</g>` : el;
+  }
+  return '';
+}
+function lzPage(W, H) { const s = Math.min(W, H), k = ART / s, vw = W * k, vh = H * k; return { k, vx: C - vw / 2, vy: C - vh / 2, vw, vh }; }
+function lzMarks(P, style) { const m = 0.4 * P.k, xs = [P.vx, P.vx + P.vw - m], ys = [P.vy, P.vy + P.vh - m];
+  return xs.flatMap(x => ys.map(y => `<path d="M${f2(x)} ${f2(y)}h${f2(m)}v${f2(m)}h${f2(-m)}Z"${style}/>`)).join(''); }
+function lzSVG(W, H, body, title) { const P = lzPage(W, H);
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${f2(W)}mm" height="${f2(H)}mm" viewBox="${f2(P.vx)} ${f2(P.vy)} ${f2(P.vw)} ${f2(P.vh)}">\n<title>${esc(title)}</title>\n${body}\n</svg>\n`; }
+async function lzPNG(W, H, dpi, body) { // greyscale-looking PNG on white, full page size (LaserGRBL uses the whole image)
+  const pw = Math.round(W / 25.4 * dpi), ph = Math.round(H / 25.4 * dpi);
+  if (Math.max(pw, ph) > 8000) throw new Error('Laser image too big: lower the size or detail.');
+  const P = lzPage(W, H), svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${pw}" height="${ph}" viewBox="${f2(P.vx)} ${f2(P.vy)} ${f2(P.vw)} ${f2(P.vh)}">${body}</svg>`;
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })), img = new Image();
+  await new Promise((ok, bad) => { img.onload = ok; img.onerror = () => bad(new Error('Could not draw the laser image.')); img.src = url; });
+  const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; const cx = cv.getContext('2d');
+  cx.fillStyle = '#fff'; cx.fillRect(0, 0, pw, ph); cx.drawImage(img, 0, 0, pw, ph); URL.revokeObjectURL(url);
+  const id = cx.getImageData(0, 0, pw, ph), d = id.data;
+  for (let p = 0; p < d.length; p += 4) { const g = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]); d[p] = d[p + 1] = d[p + 2] = g; d[p + 3] = 255; }
+  cx.putImageData(id, 0, 0);
+  return new Uint8Array(await (await new Promise(r => cv.toBlob(r, 'image/png'))).arrayBuffer());
+}
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u) { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files) { // plain "stored" zip: opens in Windows Explorer with no extra software
+  const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30)); h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(10, 0, true); h.setUint16(12, 0x5821, true);
+    h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
+    parts.push(h.buffer, name, data);
+    const c = new DataView(new ArrayBuffer(46)); c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(14, 0x5821, true);
+    c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+    cen.push(c.buffer, name); off += 30 + name.length + data.length;
+  }
+  const cl = cen.reduce((a, b) => a + b.byteLength, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cl, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...cen, e.buffer], { type: 'application/zip' });
+}
+async function laserPack() {
+  const W = +$('lzW').value, H = +$('lzH').value, dpi = +$('lzDpi').value || 254, marks = $('lzMarks').checked;
+  if (!(W >= 5 && H >= 5)) throw new Error('Enter the size in mm.');
+  const P = lzPage(W, H), hair = f2(0.1 * P.k), items = laserItems(), by = r => items.filter(it => roleOf(it) === r);
+  const imgItems = by('image'), etch = by('etch'), cin = by('cutin'), cout = by('cutout');
+  if (!imgItems.length && !etch.length && !cin.length && !cout.length) throw new Error('Every part is set to Skip.');
+  const files = [], jobs = []; let n = 0;
+  const mk = (st) => marks ? lzMarks(P, st) : '';
+  if (imgItems.length) { const f = `${++n}-image.png`; files.push({ name: f, data: await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"')) }); jobs.push([f, 'Image engrave (photo)', imgItems]); }
+  if (etch.length) {
+    const vec = etch.filter(it => !(it.key === 'img' && !(procImage(S.image) || {}).paths)), ras = etch.map(it => laserPart(it, 'fill')).join('');
+    const f = `${++n}-etch.png`; files.push({ name: f, data: await lzPNG(W, H, dpi, `<g fill="#000">${ras}</g>` + mk(' fill="#000"')) }); jobs.push([f, 'Etch (solid fill) - recommended', etch]);
+    if (vec.length) files.push({ name: `${n}-etch-vector.svg`, data: lzSVG(W, H, `<g fill="#000" stroke="none">${vec.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"'), 'Etch (vector)') });
+  }
+  const cutFile = (list, kind, label, slug) => { const f = `${++n}-${slug}.svg`;
+    files.push({ name: f, data: lzSVG(W, H, `<g fill="none" stroke="#000" stroke-width="${hair}">${list.map(it => laserPart(it, kind)).join('')}${mk('')}</g>`, label) }); jobs.push([f, label, list]); };
+  if (cin.length) cutFile(cin, 'cutin', 'Cut inside edges', 'cut-inside');
+  if (cout.length) cutFile(cout, 'cutout', 'Cut outside edge (last)', 'cut-outside');
+  files.push({ name: 'README.txt', data: lzReadme(W, H, dpi, jobs, marks, files) });
+  const blob = makeZip(files);
+  download(blob, 'wayland-forge-laser-' + new Date().toISOString().slice(0, 10) + '.zip');
+  return `${files.length} files, ${Math.max(1, Math.round(blob.size / 1024))} KB · ${W}×${H} mm`;
+}
+function lzReadme(W, H, dpi, jobs, marks, files) {
+  const L = [`WAYLAND FORGE - LASER PACK`, `Page size: ${W} x ${H} mm (every file is exactly this size, same corner = same position)`, ``, `JOBS - load them in this order (engrave first, cut the outside last so the piece doesn't move):`];
+  jobs.forEach(([f, label, list], i) => L.push(`  ${i + 1}. ${f}  -  ${label}  (${list.map(x => x.name).join(', ')})`));
+  if (files.some(f => /etch-vector/.test(f.name))) L.push(`  (extra) *-etch-vector.svg  -  the etch as vector outlines, only if you prefer vector engraving. Use EITHER the etch PNG OR this, not both.`);
+  L.push(``, `HOW TO LOAD IN LASERGRBL`,
+    `1. Unzip this folder first (right-click > Extract All).`,
+    `2. File > Open File, pick job 1.`,
+    `   - For a .png: in the import window choose "Line To Line Tracing" (or "1bit Dithering" for photos), Next.`,
+    `     In "Target image size": set Width = ${W} mm, Height = ${H} mm, Offset X = 0, Y = 0. Untick Autosize if it changes the size.`,
+    `     The PNG is ${Math.round(dpi / 25.4 * 10) / 10} lines/mm (${dpi} DPI) - set Resolution to match.`,
+    `   - For a .svg: LaserGRBL reads the mm size by itself. Type your speed / power / passes.`,
+    `3. File > Append File, pick the next job, type its own speed / power / passes. Repeat for every job in order.`,
+    `4. Use the Frame / bounding-box button to check the position on your material, then run.`,
+    ``, `ALIGNMENT`,
+    `All files share one page (${W} x ${H} mm) with the same origin, so they land on top of each other.`,
+    `A PNG keeps its full white border, so always give it the full page size and 0,0 offset as above.`,
+    marks ? `Corner marks are ON: each file has four 0.4 mm squares at the page corners so every file has the same outline. They will burn tiny dots - put them off the piece or tape over.` : `If LaserGRBL ever shifts one file against another, re-export with "Tiny corner marks" ticked.`,
+    ``, `Cut lines are 0.1 mm hairlines, letters are outlines (no fonts needed). No kerf offset is applied.`, `Laser power, speed and passes are NOT in these files - you type them in LaserGRBL for each job.`);
+  return L.join('\r\n') + '\r\n';
+}
+function laserKeyOfSel() { return sel.img ? 'img' : sel.orn ? 'orn' : sel.letters.length ? 't:' + sel.letters[0].l : null; }
+function laserUI() {
+  const box = $('laserList'); if (!box || box.contains(document.activeElement)) return;
+  const sk = laserKeyOfSel();
+  box.innerHTML = laserItems().map(it => `<label class="lrow${it.key === sk ? ' on' : ''}"><span title="${esc(it.name)}">${esc(it.name)}</span><select data-lk="${it.key}">${ROLES.map(([v, t]) => `<option value="${v}"${roleOf(it) === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>`).join('') || '<div class="hint">Nothing to laser yet.</div>';
+}
+function laserOverlay() {
+  if (!$('laserPrev') || !$('laserPrev').checked) return '';
+  const it = laserItems(), sw = 'stroke-width="3" vector-effect="non-scaling-stroke" fill="none" pointer-events="none"';
+  return `<g stroke="#e0302a" ${sw}>${it.filter(x => roleOf(x) === 'cutout').map(x => laserPart(x, 'cutout')).join('')}</g><g stroke="#2a6fe0" ${sw}>${it.filter(x => roleOf(x) === 'cutin').map(x => laserPart(x, 'cutin')).join('')}</g>`;
+}
+$('laserList').addEventListener('change', e => { const k = e.target.dataset.lk; if (!k) return; S.laser[k] = e.target.value; e.target.blur(); update(); commit(); });
+$('laserPrev').addEventListener('change', () => render());
+$('laserBtn').addEventListener('click', async () => {
+  $('lzInfo').textContent = 'Building laser pack…';
+  try { $('lzInfo').textContent = 'Saved: ' + await laserPack(); } catch (err) { console.warn(err); $('lzInfo').textContent = 'Laser export failed: ' + err.message; }
+});
+['lzW', 'lzH'].forEach(id => $(id).addEventListener('change', () => { try { localStorage.setItem('wf-lz', JSON.stringify([$('lzW').value, $('lzH').value])); } catch (e) { /* */ } }));
+try { const z = JSON.parse(localStorage.getItem('wf-lz') || 'null'); if (z) { $('lzW').value = z[0]; $('lzH').value = z[1]; } } catch (e) { /* */ }
+
 // ---------- install / offline ----------
 let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
@@ -642,7 +784,7 @@ window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; }
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW failed', err)));
 
 // ---------- boot ----------
-window.WF = { openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, doExport, update, maxInnerGap };
+window.WF = { openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, doExport, update, maxInnerGap, laserPack, laserItems };
 (async () => {
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); }));
   try { const saved = JSON.parse(localStorage.getItem(STORE) || 'null'); if (saved && Array.isArray(saved.layers)) { S = sanitize(saved); fixSel(); } } catch (e) { /* ignore bad autosave */ }

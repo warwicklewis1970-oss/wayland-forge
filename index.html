@@ -134,6 +134,19 @@
       <button id="exportBtn" class="accent wide">Export</button>
       <div id="exInfo" class="hint"></div>
     </div></details>
+    <details name="acc" id="sec-laser"><summary>Laser (LaserGRBL)</summary><div class="body">
+      <div class="hint">Give each part a laser job. Every file in the pack uses the same page, so etch and cuts line up.</div>
+      <div id="laserList"></div>
+      <label class="chk"><input type="checkbox" id="laserPrev">Show cuts on the design <span class="dim">(red = outside, blue = inside)</span></label>
+      <div class="g3">
+        <label><span>W mm</span><input type="number" id="lzW" value="100" min="5" max="800" step="0.5"></label>
+        <label><span>H mm</span><input type="number" id="lzH" value="100" min="5" max="800" step="0.5"></label>
+        <label><span>Detail</span><select id="lzDpi"><option value="127">5 lines/mm</option><option value="254" selected>10 lines/mm</option><option value="318">12.5 lines/mm</option></select></label>
+      </div>
+      <label class="chk"><input type="checkbox" id="lzMarks">Tiny corner marks in every file <span class="dim">(only if LaserGRBL moves files)</span></label>
+      <button id="laserBtn" class="accent wide">⬇ Export laser pack (.zip)</button>
+      <div id="lzInfo" class="hint"></div>
+    </div></details>
     <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
       <div class="row"><button id="saveProj" class="grow">Save</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
       <div class="helpbox"><b>Help &amp; tutorial</b>

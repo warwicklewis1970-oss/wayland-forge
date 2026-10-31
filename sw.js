@@ -1,5 +1,5 @@
 // Wayland Forge service worker: cache everything for offline use.
-const VERSION = 'wayland-forge-v10';
+const VERSION = 'wayland-forge-v11';
 const ASSETS = [
   './', './index.html', './style.css', './js/app.js', './js/blacksmith.js', './js/tour.js', './manifest.webmanifest',
   './vendor/opentype.min.js', './vendor/jspdf.umd.min.js', './vendor/svg2pdf.umd.min.js', './vendor/imagetracer.js',
