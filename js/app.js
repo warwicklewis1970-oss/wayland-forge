@@ -2,10 +2,14 @@
 'use strict';
 (() => {
 const FONTS = [
-  ['Cinzel', 'Cinzelwght.ttf'], ['Playfair Display', 'PlayfairDisplaywght.ttf'], ['Oswald', 'Oswaldwght.ttf'],
-  ['Bebas Neue', 'BebasNeue-Regular.ttf'], ['Alfa Slab One', 'AlfaSlabOne-Regular.ttf'], ['Rye', 'Rye-Regular.ttf'],
-  ['Pirata One', 'PirataOne-Regular.ttf'], ['Metal Mania', 'MetalMania-Regular.ttf']
+  ['Cinzel', 'Cinzelwght.ttf', 'Classic'], ['Playfair Display', 'PlayfairDisplaywght.ttf', 'Classic'], ['Oswald', 'Oswaldwght.ttf', 'Classic'],
+  ['Bebas Neue', 'BebasNeue-Regular.ttf', 'Classic'], ['Alfa Slab One', 'AlfaSlabOne-Regular.ttf', 'Classic'], ['Rye', 'Rye-Regular.ttf', 'Classic'],
+  ['Pirata One', 'PirataOne-Regular.ttf', 'Classic'], ['Metal Mania', 'MetalMania-Regular.ttf', 'Classic'],
+  ['Mountains of Christmas', 'MountainsofChristmas-Bold-sub.ttf', 'Festive'], ['Berkshire Swash', 'BerkshireSwash-Regular-sub.ttf', 'Festive'], ['Emilys Candy', 'EmilysCandy-Regular-sub.ttf', 'Festive'],
+  ['Great Vibes', 'GreatVibes-Regular-sub.ttf', 'Script & soft', 1], ['Dancing Script', 'DancingScript-sub.ttf', 'Script & soft', 1], ['Pacifico', 'Pacifico-Regular-sub.ttf', 'Script & soft', 1],
+  ['Lobster', 'Lobster-Regular-sub.ttf', 'Script & soft', 1], ['Fredoka', 'Fredoka-sub.ttf', 'Script & soft']
 ];
+const SCRIPT = new Set(FONTS.filter(f => f[3]).map(f => f[0]));
 const C = 500, ART = 1000, STORE = 'wayland-forge-project-v1';
 const fonts = {};
 const $ = id => document.getElementById(id);
@@ -372,7 +376,7 @@ function syncUI() {
   $('ornFields').hidden = !curOrn(); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
   $('imgFields').hidden = !S.image;
   $('swatches').innerHTML = S.swatches.map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
-  laserUI();
+  laserUI(); if (curLayer()) $('fontSel').style.fontFamily = `'WF ${curLayer().font}'`;
   $('undoBtn').disabled = hist.i <= 0; $('redoBtn').disabled = hist.i >= hist.stack.length - 1;
 }
 function target(scope) {
@@ -413,7 +417,8 @@ document.querySelectorAll('[data-b]').forEach(el => {
   });
   el.addEventListener('change', commit);
 });
-$('fontSel').innerHTML = FONTS.map(f => `<option>${f[0]}</option>`).join('');
+$('fontSel').innerHTML = [...new Set(FONTS.map(f => f[2]))].map(g => `<optgroup label="${g}">` + FONTS.filter(f => f[2] === g).map(f => `<option style="font-family:'WF ${f[0]}'">${f[0]}</option>`).join('') + '</optgroup>').join('');
+$('fontSel').addEventListener('change', () => { const L = curLayer(); if (L && SCRIPT.has(L.font) && L.spacing > 0) { L.spacing = 0; update(); commit(); } $('fontSel').style.fontFamily = `'WF ${$('fontSel').value}'`; });
 $('layerSel').addEventListener('change', e => { sel.layer = e.target.value; update(); });
 const act = (id, fn) => $(id).addEventListener('click', () => { fn(); fixSel(); update(); commit(); });
 act('addLayer', () => { const L = newLayer('NEW TEXT', 'top'); L.ring = 'outer'; S.layers.push(L); sel.layer = L.id; });
@@ -795,7 +800,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEve
 // ---------- boot ----------
 window.WF = { openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, doExport, update, maxInnerGap, laserPack, laserItems };
 (async () => {
-  await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); }));
+  await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
   try { const saved = JSON.parse(localStorage.getItem(STORE) || 'null'); if (saved && Array.isArray(saved.layers)) { S = sanitize(saved); fixSel(); } } catch (e) { /* ignore bad autosave */ }
   $('loading').remove(); update(); commit();
   document.body.dataset.ready = '1';
