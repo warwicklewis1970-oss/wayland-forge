@@ -10,9 +10,25 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="home">
+<div id="home">
+  <div class="hcard">
+    <div class="hlogo"><img src="icons/anvil.svg" alt="" class="hanvil"><span id="homeSmith"></span></div>
+    <h1 class="htitle">Wayland Forge</h1>
+    <div class="hsub">Badges with text on a path · print, Printify &amp; laser</div>
+    <div id="homeMain" class="hbtns">
+      <button id="homeNew" class="hb primary">✚ New design</button>
+      <button id="homeProjects" class="hb">📂 Projects</button>
+      <button id="homeTour" class="hb">▶ Tutorial</button>
+    </div>
+    <div id="homeProjs" hidden>
+      <div class="row hph"><button id="homeBack">← Back</button><b class="grow">Projects</b><label class="filebtn">Open file…<input type="file" id="homeLoad" accept=".json,application/json" hidden></label></div>
+      <ul id="projList"></ul>
+    </div>
+  </div>
+</div>
 <header>
-  <img src="icons/anvil.svg" alt="" class="logo"><button id="helpBtn" title="Help &amp; tutorial (Wayland the blacksmith)" aria-label="Help and tutorial"></button><h1>Wayland Forge</h1>
+  <img src="icons/anvil.svg" alt="" class="logo"><button id="homeBtn" title="Home: start screen and projects (your work is kept)" aria-label="Home">⌂</button><button id="helpBtn" title="Help &amp; tutorial (Wayland the blacksmith)" aria-label="Help and tutorial"></button><h1>Wayland Forge</h1>
   <div class="spacer"></div>
   <button id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="tl"> Undo</span></button>
   <button id="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷<span class="tl"> Redo</span></button>
@@ -170,13 +186,13 @@
       <div id="lzInfo" class="hint"></div>
     </div></details>
     <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
-      <div class="row"><button id="saveProj" class="grow">Save</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
+      <div class="row"><button id="saveToProjects" class="grow">Save to Projects</button><button id="saveProj" class="grow">Download file</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
       <div class="helpbox"><b>Help &amp; tutorial</b>
         <div class="row"><button id="helpTour" class="grow">▶ Start the tour</button><button id="helpTopics" class="grow">Pick a topic…</button></div>
         <label class="chk"><input type="checkbox" id="helpIconChk">Show the blacksmith help button in the toolbar</label>
         <label class="chk"><input type="checkbox" id="helpTipsChk">Show tips (a short hint the first time you open each section)</label>
       </div>
-      <div class="hint">Autosaves in this browser. Fonts: SIL Open Font License.</div>
+      <div class="hint">Autosaves in this browser; find it again under ⌂ Home › Projects. Fonts: SIL Open Font License.</div>
     </div></details>
   </aside>
 </main>

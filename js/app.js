@@ -519,7 +519,14 @@ function sanitize(raw) {
 function fixSel() {
   if (!S.shapes.some(s => s.id === sel.shape)) sel.shape = S.shapes[0].id;
   if (!curLayer() || shapeOf(curLayer()) !== curShape()) { const f = S.layers.find(l => shapeOf(l) === curShape()); sel.layer = f ? f.id : null; } if (!curOrn()) sel.orn = null; if (!S.image) sel.img = false; sel.letters = sel.letters.filter(s => { const L = S.layers.find(x => x.id === s.l); return L && s.i < L.text.length; }); }
-let saveT; function persist() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { /* storage full (large image) */ } }, 300); }
+// ---- projects: autosave "last session" + named projects kept in this browser ----
+const PROJS = 'wayland-forge-projects-v1', META = 'wayland-forge-session-v1';
+let homeOpen = true, projId = null;
+const readProjs = () => { try { const a = JSON.parse(localStorage.getItem(PROJS) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+const writeProjs = a => { try { localStorage.setItem(PROJS, JSON.stringify(a)); return true; } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
+function saveNow() { if (homeOpen) return; try { localStorage.setItem(STORE, JSON.stringify(S)); localStorage.setItem(META, JSON.stringify({ projId, t: Date.now() })); } catch (e) { /* storage full (large image) */ }
+  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.state = S; x.updated = Date.now(); try { localStorage.setItem(PROJS, JSON.stringify(a)); } catch (e) { /* full */ } } } }
+let saveT; function persist() { if (homeOpen) return; clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
 
 // ---------- control bindings ----------
 document.querySelectorAll('[data-b]').forEach(el => {
@@ -552,7 +559,36 @@ act('fitImg', () => { if (S.image) Object.assign(S.image, fitInside(S.image)); }
 act('fillImg', () => { if (S.image) Object.assign(S.image, fillInner(S.image), { clip: true }); });
 act('delImg', () => { S.image = null; });
 act('addSwatch', () => { const c = $('swatchPick').value; if (!S.swatches.includes(c)) S.swatches.push(c); });
-act('newProj', () => { if (confirm('Start a new design? Unsaved work will be replaced.')) { S = defaults(); sel = { layer: S.layers[0].id, shape: S.shapes[0].id, letters: [], orn: null, img: false }; } });
+act('newProj', () => { if (confirm('Start a new design? (Your current one stays in Projects.)')) { archiveSession(); openState(defaults(), null); } });
+function archiveSession() { // keep an unnamed last session so starting fresh never loses work
+  try { const m = JSON.parse(localStorage.getItem(META) || '{}'), raw = localStorage.getItem(STORE); if (!raw || m.projId) return;
+    const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
+    const a = readProjs(); a.unshift({ id: uid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); localStorage.setItem(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
+function openState(st, id, keepLast) { if (!keepLast) archiveSession(); S = sanitize(st); projId = id; sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false }; fixSel(); hist.stack = []; hist.i = -1; closeHome(); update(); commit(); fitView(); saveNow(); }
+function projName() { const x = projId && readProjs().find(q => q.id === projId); return x ? x.name : null; }
+act('saveToProjects', () => { const n = projName(); if (n) { saveNow(); toast('Saved to Projects: ' + n); return; }
+  const name = prompt('Name this project:', (S.layers[0] && S.layers[0].text) || 'My badge'); if (!name) return; const a = readProjs(), id = uid(); a.unshift({ id, name: name.trim().slice(0, 60), updated: Date.now(), state: S }); if (writeProjs(a)) { projId = id; saveNow(); toast('Saved to Projects: ' + name); } });
+// ---- home / start screen ----
+function showHome(view) { saveNow(); homeOpen = true; document.body.classList.add('home'); $('home').hidden = false; homeView(view || 'main'); }
+function closeHome() { homeOpen = false; document.body.classList.remove('home'); $('home').hidden = true; }
+function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; if (v === 'projs') listProjs(); }
+const ago = t => { if (!t) return ''; const d = new Date(t); return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(localStorage.getItem(META) || '{}'); } catch (e) { /* */ }
+  const last = !m.projId && !m.archived && localStorage.getItem(STORE);
+  const row = (id, name, t, extra) => `<li data-pid="${id}"><button class="po grow" data-pa="open"><b>${esc(name)}</b><span class="dim">${extra || ''}${ago(t)}</span></button>${id === 'last' ? '' : '<button data-pa="ren" title="Rename" aria-label="Rename">✎</button>'}<button data-pa="del" class="danger" title="Delete" aria-label="Delete">✕</button></li>`;
+  const html = (last ? row('last', 'Last session', m.t, 'Not saved by name · ') : '') + a.map(x => row(x.id, x.name, x.updated)).join('');
+  $('projList').innerHTML = html || '<li class="hint">No saved projects yet. Start a New design and tap <b>Save to Projects</b>.</li>'; }
+$('projList').addEventListener('click', e => { const b = e.target.closest('[data-pa]'); if (!b) return; const id = b.closest('li').dataset.pid, a = readProjs(), x = a.find(q => q.id === id);
+  if (b.dataset.pa === 'open') { if (id === 'last') { try { openState(JSON.parse(localStorage.getItem(STORE)), null, true); } catch (er) { alert('Could not open the last session.'); } } else if (x) openState(x.state, x.id); }
+  else if (b.dataset.pa === 'ren' && x) { const n = prompt('Rename project:', x.name); if (n) { x.name = n.trim().slice(0, 60); writeProjs(a); listProjs(); } }
+  else if (b.dataset.pa === 'del') { if (!confirm('Delete "' + (x ? x.name : 'Last session') + '"? This cannot be undone.')) return; if (id === 'last') { localStorage.removeItem(STORE); localStorage.removeItem(META); } else { writeProjs(a.filter(q => q.id !== id)); if (projId === id) projId = null; } listProjs(); } });
+$('homeNew').onclick = () => { archiveSession(); openState(defaults(), null); window.dispatchEvent(new Event('wf-newdesign')); };
+$('homeProjects').onclick = () => homeView('projs');
+$('homeBack').onclick = () => homeView('main');
+$('homeTour').onclick = () => { if (homeOpen && !$('homeTour').dataset.keep) { archiveSession(); openState(defaults(), null); } window.dispatchEvent(new Event('wf-tutorial')); };
+$('homeLoad').addEventListener('change', e => { $('loadProj').files = e.target.files; $('loadProj').dispatchEvent(new Event('change')); });
+$('homeBtn').onclick = () => showHome('main');
+function toast(t) { let el = $('wfToast'); if (!el) { el = document.createElement('div'); el.id = 'wfToast'; document.body.appendChild(el); } el.textContent = t; el.classList.add('on'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('on'), 2200); }
 // ---------- shape layers ----------
 $('shapeSel').addEventListener('change', e => { sel.shape = e.target.value; sel.letters = []; fixSel(); update(); });
 $('addShape').addEventListener('change', e => { const t = e.target.value; e.target.value = ''; if (!t) return;
@@ -731,7 +767,7 @@ $('exportBtn').addEventListener('click', async () => {
 $('saveProj').onclick = () => download(new Blob([JSON.stringify({ app: 'wayland-forge', version: 1, state: S }, null, 1)], { type: 'application/json' }), 'wayland-forge-project.json');
 $('loadProj').addEventListener('change', async e => {
   const file = e.target.files[0]; if (!file) return; e.target.value = '';
-  try { const j = JSON.parse(await file.text()); if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project'); S = sanitize(j.state); fixSel(); update(); commit(); }
+  try { const j = JSON.parse(await file.text()); if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project'); if (homeOpen) { archiveSession(); openState(j.state, null); } else { S = sanitize(j.state); fixSel(); update(); commit(); } }
   catch (err) { alert('Could not load project: ' + err.message); }
 });
 
@@ -942,10 +978,10 @@ window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; }
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW failed', err)));
 
 // ---------- boot ----------
-window.WF = { openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
+window.WF = { showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
 (async () => {
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
-  try { const saved = JSON.parse(localStorage.getItem(STORE) || 'null'); if (saved && Array.isArray(saved.layers)) { S = sanitize(saved); fixSel(); } } catch (e) { /* ignore bad autosave */ }
+  // start on the home screen; projects open only from Projects
   $('loading').remove(); update(); commit();
   document.body.dataset.ready = '1';
 })().catch(err => { $('loading').textContent = 'Failed to load fonts: ' + err.message; console.error(err); });

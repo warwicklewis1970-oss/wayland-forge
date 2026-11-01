@@ -122,3 +122,24 @@ button.mini{padding:1px 7px;font-size:11px;margin-left:6px}
 #laserList .lrow.on{background:rgba(224,160,67,.18);outline:1px solid #e0a043}
 
 #layerBar{padding:6px 10px;border-bottom:1px solid var(--line);background:#221e1a}#layerBar .row{margin:3px 0}.lbt{color:var(--amber);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.lbb>select{flex:1;min-width:0}.lbb>button{min-width:34px;padding-left:6px;padding-right:6px}
+
+#homeBtn{padding:0 8px;font-size:18px;line-height:1}
+#home{position:fixed;inset:0;z-index:900;background:radial-gradient(circle at 50% 30%,#2b241c,#14120f 70%);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 14px}
+#home[hidden]{display:none}
+.hcard{width:100%;max-width:460px;text-align:center;margin:auto}
+.hlogo{display:flex;align-items:flex-end;justify-content:center;gap:6px}
+.hanvil{width:90px;height:90px}
+#homeSmith .wf-smith{width:130px;height:145px}
+.htitle{font-size:34px;letter-spacing:.08em;color:var(--amber);margin:6px 0 2px;text-transform:uppercase}
+.hsub{color:var(--dim);font-size:14px;margin-bottom:22px}
+.hbtns{display:flex;flex-direction:column;gap:12px}
+.hb{font-size:18px;padding:14px;border-radius:12px}
+.hb.primary{background:var(--amber);color:#1b1408;border-color:var(--amber);font-weight:700}
+.hph{align-items:center;margin-bottom:8px;text-align:left}
+#projList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;text-align:left}
+#projList li{display:flex;gap:6px}
+#projList .po{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;text-align:left}
+#projList .po .dim{font-size:12px;color:var(--dim);font-weight:400}
+#projList li>button:not(.po){min-width:44px}
+#wfToast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2a2520;color:var(--ink);border:1px solid var(--amber);padding:8px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:950}
+#wfToast.on{opacity:1}

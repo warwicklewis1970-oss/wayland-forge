@@ -37,7 +37,7 @@
     { topic: 'finish', sec: 'sec-export', t: [lbl('#exFmt')], pose: 'point', title: 'PDF or SVG for print', text: 'For a printer or a cutting machine pick <b>PDF vector</b> or <b>SVG vector</b>: sharp at any size. Then tap <b>Export</b>.' },
     { topic: 'laser', sec: 'sec-laser', t: ['#laserList'], pose: 'point', title: 'Laser jobs', text: 'Got a laser? Give each part a job here: <b>Etch</b> to engrave it, <b>Cut inside</b> or <b>Cut outside edge</b> to cut it, or <b>Image</b> for a photo. Tick <b>Show cuts</b> to see red and blue cut lines.' },
     { topic: 'laser', sec: 'sec-laser', t: ['#laserBtn'], pose: 'point', title: 'Laser pack', text: 'Type the real size in mm, then tap <b>Export laser pack</b>. You get a small zip with one numbered file per job and a README. In LaserGRBL open file 1, then <b>File → Append File</b> for the rest, in number order.' },
-    { topic: 'finish', sec: 'sec-proj', t: ['#saveProj'], pose: 'point', title: 'Save your project', text: 'Your work saves itself in this browser. <b>Save</b> also downloads a project file you can <b>Load</b> later or on another device.' },
+    { topic: 'finish', sec: 'sec-proj', t: ['#saveToProjects'], pose: 'point', title: 'Save your project', text: 'Your work saves itself in this browser. <b>Save to Projects</b> gives it a name so you can open it again from <b>⌂ Home › Projects</b>. <b>Download file</b> makes a copy for another device.' },
     { topic: 'install', t: ['#installBtn', '#helpBtn'], pose: 'thumbs', title: 'Install the app', text: () => vis($('installBtn')) ? 'Tap <b>Install</b> to put Wayland Forge on your home screen or desktop. It works offline too.' : 'To install: in Chrome tap the <b>⋮</b> menu and choose <b>Install app</b> (or <b>Add to Home screen</b>). On a computer, use the install icon in the address bar.' },
     { topic: 'end', t: ['#helpBtn'], pose: 'thumbs', title: "That's the lot!", text: () => (vis($('helpBtn')) ? 'Tap my face up here any time to see the tour again or learn one topic.' : 'Open <b>Project → Help &amp; tutorial</b> any time to see the tour again.') + ' Happy forging!' },
   ];
@@ -149,7 +149,9 @@
   function applyCfg() { hb.hidden = !cfg.icon; $('helpIconChk').checked = cfg.icon; $('helpTipsChk').checked = cfg.tips; document.body.classList.toggle('wf-nohelp', !cfg.icon); }
   applyCfg();
   // first ever visit: friendly offer once the app is ready
-  const offer = () => { if (!cfg.offered && cfg.tips) openCard('welcome'); };
+  const offer = () => { if (!document.body.classList.contains('home') && !cfg.offered && cfg.tips) openCard('welcome'); };
+  window.addEventListener('wf-newdesign', () => setTimeout(offer, 400)); window.addEventListener('wf-tutorial', () => setTimeout(() => start(), 300));
+  { const hs = document.getElementById('homeSmith'); if (hs) hs.innerHTML = smith('wave'); }
   if (document.body.dataset.ready === '1') setTimeout(offer, 400);
   else new MutationObserver((_, o) => { if (document.body.dataset.ready === '1') { o.disconnect(); setTimeout(offer, 400); } }).observe(document.body, { attributes: true, attributeFilter: ['data-ready'] });
   window.WFTour = { start, stop, openCard, closeCard, steps: STEPS, topics: TOPICS, cfg, get running() { return run; }, target: i => run && run.el };
