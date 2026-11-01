@@ -409,8 +409,44 @@ function exportSVG(W, H, unit, bleed, pxOverride) {
 // ---------- editor rendering ----------
 const stage = $('stage');
 let view = { x: -40, y: -40, w: 1080, h: 1080 };
+
+// ---- ornament movement: linked mirror pairs + follow-a-path ----
+const pathCache = new Map();
+function pathSamples(shId, which) { // closed polyline of the chosen line, clockwise from the top, in art coords
+  const sh = S.shapes.find(x => x.id === shId) || S.shapes[0]; const key = JSON.stringify([sh.x, sh.y, sh.scale, sh.rot, sh.base, which]);
+  if (pathCache.has(key)) return pathCache.get(key);
+  const gap = sh.base.gap, off = which === 'inner' ? -gap : which === 'mid' ? -gap / 2 : 0;
+  const el = withShape(sh, () => shapeEl(off, ''));
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'); svg.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden'; svg.innerHTML = el || ''; document.body.appendChild(svg);
+  let g = svg.firstElementChild, P = [];
+  if (g) { if (g.tagName === 'ellipse') { const cx = +g.getAttribute('cx'), cy = +g.getAttribute('cy'), rx = +g.getAttribute('rx'), ry = +g.getAttribute('ry'); for (let i = 0; i < 720; i++) { const a = i / 720 * 2 * Math.PI; P.push([cx + rx * Math.sin(a), cy - ry * Math.cos(a)]); } }
+    else { const L = g.getTotalLength(); for (let i = 0; i < 720; i++) { const q = g.getPointAtLength(L * i / 720); P.push([q.x, q.y]); } } }
+  svg.remove();
+  P = P.map(([x, y]) => { const q = shPt(sh, x, y); return [q.x, q.y]; });
+  if (P.length) { let A = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; A += a[0] * b[1] - b[0] * a[1]; } if (A < 0) P.reverse();
+    const cx = C + (sh.x || 0); let bi = 0, bv = Infinity; P.forEach(([x, y], i) => { const v = Math.abs(x - cx) * 3 + y; if (v < bv) { bv = v; bi = i; } }); P = P.slice(bi).concat(P.slice(0, bi)); }
+  // re-sample evenly by length
+  const cum = [0]; for (let i = 1; i <= P.length; i++) { const a = P[i - 1], b = P[i % P.length]; cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  const res = { P, cum, len: cum[cum.length - 1] || 1 }; pathCache.set(key, res); if (pathCache.size > 60) pathCache.delete(pathCache.keys().next().value); return res;
+}
+function pathAt(ps, t) { // t in degrees -180..180 (0 = top, clockwise)
+  const { P, cum, len } = ps; if (!P.length) return null; let L = ((t / 360) % 1 + 1) % 1 * len, i = 0; while (i < P.length - 1 && cum[i + 1] < L) i++;
+  const a = P[i], b = P[(i + 1) % P.length], k = (L - cum[i]) / ((cum[i + 1] - cum[i]) || 1), tx = b[0] - a[0], ty = b[1] - a[1], n = Math.hypot(tx, ty) || 1;
+  return { x: a[0] + tx * k, y: a[1] + ty * k, tx: tx / n, ty: ty / n };
+}
+function pathNearest(ps, x, y) { let bi = 0, bv = Infinity; ps.P.forEach(([px, py], i) => { const v = (px - x) ** 2 + (py - y) ** 2; if (v < bv) { bv = v; bi = i; } }); let t = ps.cum[bi] / ps.len * 360; if (t > 180) t -= 360; return Math.round(t * 10) / 10; }
+function applyFollow(o) { const f = o.follow; if (!f || !f.on) return; const q = pathAt(pathSamples(f.shape, f.path), f.t || 0); if (!q) return;
+  o.x = f2(q.x + q.ty * (f.off || 0)); o.y = f2(q.y - q.tx * (f.off || 0)); if (f.turn) o.rot = Math.round(Math.atan2(q.ty, q.tx) * 180 / Math.PI * 10) / 10; }
+const partnerOf = o => o && o.pair ? S.ornaments.find(x => x.id === o.pair && x.pair === o.id) || null : null;
+function mirrorInto(o, p) { Object.assign(p, { x: f2(ART - o.x), y: o.y, rot: -o.rot, r: o.r, color: o.color, color2: o.color2, flip: !o.flip, type: o.type }); if (o.follow) p.follow = { ...o.follow, t: -(o.follow.t || 0) }; else delete p.follow; }
+function syncOrns() { const done = new Set(), lead = curOrn();
+  const order = lead ? [lead, ...S.ornaments.filter(x => x !== lead)] : S.ornaments;
+  for (const o of order) { if (done.has(o.id)) continue; done.add(o.id); applyFollow(o); const p = partnerOf(o); if (p) { done.add(p.id); mirrorInto(o, p); } } }
+function linkMirrors(list) { for (const o of list) { if (o.pair && !list.some(x => x.id === o.pair)) delete o.pair; }
+  for (const o of list) { if (o.pair) continue; const p = list.find(x => x !== o && !x.pair && x.type === o.type && Math.abs(x.x - (ART - o.x)) < 0.6 && Math.abs(x.y - o.y) < 0.6 && x.r === o.r && Math.abs((x.rot || 0) + (o.rot || 0)) < 0.6 && Math.abs(o.x - C) > 0.6); if (p) { o.pair = p.id; p.pair = o.id; } } return list; }
 function render() {
   const bgFill = S.bg === 'color' ? S.bgColor : 'none';
+  syncOrns();
   stage.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
   stage.innerHTML = `<rect x="0" y="0" width="${ART}" height="${ART}" fill="${bgFill}" stroke="#6b5f50" stroke-dasharray="6 6" data-k="bg"/>` + buildArt(true) + laserOverlay();
   persist();
@@ -445,7 +481,11 @@ function syncUI() {
   $('dragMode').classList.toggle('pan', mode.pan); $('dragMode').innerHTML = mode.pan ? '✋<span class="tl"> Pan</span>' : '▭<span class="tl"> Box</span>';
   const im = S.image; if (im) document.querySelectorAll('[data-imgmodes]').forEach(e => e.hidden = !e.dataset.imgmodes.split(' ').includes(im.mode));
   if (im && im.mode === 'trace') { const pr = procImage(im); $('traceInfo').textContent = pr && pr.paths ? `Traced ${pr.paths.length} vector shape${pr.paths.length === 1 ? '' : 's'}; they export as true paths in SVG and PDF.` : 'Tracing…'; }
-  const oc = curOrn(); if (oc) document.querySelectorAll('[data-op]').forEach(el => { const v = el.dataset.op === 'ang' ? Math.round(Math.atan2(oc.x - C, -(oc.y - C)) * 180 / Math.PI) : Math.round(Math.hypot(oc.x - C, oc.y - C)); if (document.activeElement !== el) el.value = v; el.nextElementSibling.textContent = el.value; });
+  const oc = curOrn(); if (oc) { const f = oc.follow || {}, fo = !!f.on;
+    document.querySelectorAll('[data-op]').forEach(el => { const k = el.dataset.op, v = k === 'x' ? Math.round(oc.x - C) : k === 'y' ? Math.round(oc.y - C) : k === 't' ? Math.round(f.t || 0) : Math.round(f.off || 0); if (document.activeElement !== el) el.value = v; el.nextElementSibling.textContent = el.value; });
+    $('ornFollow').checked = fo; $('ornFree').hidden = fo; $('ornPathF').hidden = !fo; $('ornTurn').checked = !!f.turn; $('ornPath').value = f.path || 'outer'; $('ornRotRow').hidden = fo && !!f.turn;
+    $('ornShapeSel').innerHTML = S.shapes.map(x => `<option value="${x.id}">${x.name}</option>`).join(''); $('ornShapeSel').value = f.shape || S.shapes[0].id; $('ornShapeSel').parentElement.hidden = S.shapes.length < 2;
+    const pr = partnerOf(oc); $('ornLink').hidden = !pr; $('mirrorOrn').hidden = !!pr; }
   $('ornFields').hidden = !curOrn(); $('ornBerry').hidden = !(curOrn() && /holly/.test(curOrn().type)); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
   $('imgFields').hidden = !S.image;
   $('swatches').innerHTML = S.swatches.map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
@@ -469,7 +509,7 @@ function sanitize(raw) {
   const st = { bg: o.bg === 'color' ? 'color' : 'transparent', bgColor: o.bgColor || d.bgColor,
     shapes: Array.isArray(o.shapes) && o.shapes.length ? o.shapes.map((x, i) => Object.assign(newShape('Layer ' + (i + 1)), x, { base: Object.assign(baseDefaults(), x.base || {}) })) : [newShape('Layer 1', o.base)], swatches: Array.isArray(o.swatches) ? o.swatches : d.swatches,
     layers: Array.isArray(o.layers) ? o.layers.map(l => Object.assign(newLayer('', 'top'), l)) : d.layers,
-    ornaments: Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)) : d.ornaments,
+    ornaments: linkMirrors(Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)) : d.ornaments),
     image: o.image && o.image.src ? Object.assign(imgDefaults(), o.image) : null,
     laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {} };
   for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
@@ -504,8 +544,8 @@ act('resetLetter', () => { for (const s of sel.letters) { const L = S.layers.fin
 act('resetLetters', () => { const L = curLayer(); if (L) L.letters = {}; });
 const addOrn = type => { const o = { id: uid(), type, x: C, y: C, r: ORN_R[type] || 20, rot: 0, color: (type === 'holly1' || type === 'holly2') ? '#1f6b34' : SB().stroke, ...(type === 'holly1' || type === 'holly2' ? { color2: '#c0262d' } : {}) }; S.ornaments.push(o); sel.orn = o.id; };
 act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot')); act('addHolly1', () => addOrn('holly1')); act('addHolly2', () => addOrn('holly2')); act('addNote', () => addOrn('note')); act('addNotes', () => addOrn('notes'));
-act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), x: ART - o.x, rot: -o.rot, flip: !o.flip }; S.ornaments.push(c); sel.orn = c.id; });
-act('delOrn', () => { S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
+act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), follow: o.follow ? { ...o.follow } : undefined }; if (Math.abs(o.x - C) < 1) o.x = C - 120; c.pair = o.id; o.pair = c.id; mirrorInto(o, c); S.ornaments.push(c); sel.orn = c.id; });
+act('delOrn', () => { const p = partnerOf(curOrn()); if (p) delete p.pair; S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
 act('clearOrn', () => { S.ornaments = []; });
 act('centreImg', () => { if (S.image) { S.image.x = C; S.image.y = C; } });
 act('fitImg', () => { if (S.image) Object.assign(S.image, fitInside(S.image)); });
@@ -579,13 +619,19 @@ document.querySelectorAll('[data-rel]').forEach(el => {
   el.addEventListener('change', () => { commit(); syncUI(); });
 });
 document.querySelectorAll('[data-op]').forEach(el => {
-  el.addEventListener('input', () => { const o = curOrn(); if (!o) return;
-    const q = document.querySelector('[data-op=ang]'), r = document.querySelector('[data-op=dist]'), a = +q.value * Math.PI / 180, d = +r.value;
-    o.x = f2(C + d * Math.sin(a)); o.y = f2(C - d * Math.cos(a)); el.nextElementSibling.textContent = el.value; render(); });
+  el.addEventListener('input', () => { const o = curOrn(); if (!o) return; const k = el.dataset.op, v = +el.value;
+    if (k === 'x') o.x = C + v; else if (k === 'y') o.y = C + v; else if (o.follow) { if (k === 't') o.follow.t = v; else o.follow.off = v; }
+    el.nextElementSibling.textContent = el.value; render(); });
   el.addEventListener('change', () => { commit(); syncUI(); });
 });
-document.querySelectorAll('[data-onudge]').forEach(bt => bt.addEventListener('click', () => { const o = curOrn(); if (!o) return; const [x, y] = bt.dataset.onudge.split(',').map(Number); o.x = f2(o.x + x * 2); o.y = f2(o.y + y * 2); update(); commit(); }));
-act('centreOrn', () => { const o = curOrn(); if (o) { o.x = C; o.y = C; } });
+document.querySelectorAll('[data-onudge]').forEach(bt => bt.addEventListener('click', () => { const o = curOrn(); if (!o) return; const [x, y] = bt.dataset.onudge.split(',').map(Number); if (o.follow && o.follow.on) { o.follow.t = Math.round(((o.follow.t || 0) + x + 540) % 360 - 180); o.follow.off = (o.follow.off || 0) - y * 2; } else { o.x = f2(o.x + x * 2); o.y = f2(o.y + y * 2); } update(); commit(); }));
+act('centreOrn', () => { const o = curOrn(); if (!o) return; if (o.follow && o.follow.on) { o.follow.t = 0; o.follow.off = 0; } else { o.x = C; o.y = C; } });
+const followFrom = o => ({ on: true, shape: (o.follow && o.follow.shape) || curShape().id, path: (o.follow && o.follow.path) || 'outer', t: 0, off: 0, turn: !!(o.follow && o.follow.turn) });
+$('ornFollow').addEventListener('change', e => { const o = curOrn(); if (!o) return; if (e.target.checked) { const f = followFrom(o); const ps = pathSamples(f.shape, f.path); f.t = pathNearest(ps, o.x, o.y); o.follow = f; } else if (o.follow) o.follow.on = false; update(); commit(); });
+$('ornPath').addEventListener('change', e => { const o = curOrn(); if (o && o.follow) { o.follow.path = e.target.value; update(); commit(); } });
+$('ornShapeSel').addEventListener('change', e => { const o = curOrn(); if (o && o.follow) { o.follow.shape = e.target.value; update(); commit(); } });
+$('ornTurn').addEventListener('change', e => { const o = curOrn(); if (o && o.follow) { o.follow.turn = e.target.checked; if (!o.follow.turn) o.rot = 0; update(); commit(); } });
+act('ornLink', () => { const o = curOrn(), p = partnerOf(o); if (p) { delete o.pair; delete p.pair; } });
 $('multiBtn').onclick = $('multiBtn2').onclick = () => { mode.multi = !mode.multi; syncUI(); };
 $('dragMode').onclick = () => { mode.pan = !mode.pan; syncUI(); };
 $('clearSel').onclick = () => { sel.letters = []; update(); };
@@ -610,7 +656,7 @@ stage.addEventListener('pointerdown', e => {
     else { sel.letters = [{ l, i }]; startLetterDrag(p); }
     openSec('sec-letter');
   } else if (k === 'sh') { const sh = S.shapes.find(s => s.id === t.dataset.id); sel.shape = sh.id; sel.orn = null; sel.letters = []; fixSel(); drag = { obj: sh, x0: sh.x, y0: sh.y, p }; if (S.shapes.length > 1) openSec('sec-shape'); }
-  else if (k === 'orn') { sel.orn = t.dataset.id; sel.letters = []; const o = curOrn(); drag = { obj: o, x0: o.x, y0: o.y, p }; openSec('sec-orn'); }
+  else if (k === 'orn') { sel.orn = t.dataset.id; sel.letters = []; const o = curOrn(); drag = { obj: o, x0: o.x, y0: o.y, p, orn: true }; openSec('sec-orn'); }
   else if (k === 'img') { sel.img = true; sel.orn = null; sel.letters = []; drag = { obj: S.image, x0: S.image.x, y0: S.image.y, p }; openSec('sec-img'); }
   else { sel.orn = null; if (!additive(e)) sel.letters = []; drag = { mq: true, p, cx: e.clientX, cy: e.clientY }; }
   drag.sx = e.clientX; drag.sy = e.clientY;
@@ -628,8 +674,9 @@ stage.addEventListener('pointermove', e => {
   if (drag.mq) { drawMarquee(p); return; }
   if (drag.letters) { let ux = dx, uy = dy; if (drag.sh) { const a = -(drag.sh.rot || 0) * Math.PI / 180, k = drag.sh.scale || 1; ux = (dx * Math.cos(a) - dy * Math.sin(a)) / k; uy = (dx * Math.sin(a) + dy * Math.cos(a)) / k; }
     for (const q of drag.letters) { q.o.dx = f2(q.x0 + ux); q.o.dy = f2(q.y0 + uy); } }
+  else if (drag.orn && drag.obj.follow && drag.obj.follow.on) { const f = drag.obj.follow; f.t = pathNearest(pathSamples(f.shape, f.path), drag.x0 + dx, drag.y0 + dy); }
   else { drag.obj.x = f2(drag.x0 + dx); drag.obj.y = f2(drag.y0 + dy); }
-  render();
+  render(); if (drag.orn) syncUI();
 });
 function endDrag(e) {
   const d = drag; drag = null; stage.classList.remove('panning'); if (!d) return;

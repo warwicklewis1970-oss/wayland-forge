@@ -95,12 +95,21 @@
       <div class="row"><button id="addHolly1" class="grow">+ Holly</button><button id="addHolly2" class="grow">+ Holly ×2</button><button id="addNote" class="grow">+ ♪</button><button id="addNotes" class="grow">+ ♫</button></div>
       <div id="ornNone" class="hint">Click an ornament to edit it.</div>
       <div id="ornFields">
-        <label class="rg" title="Where it sits around the shape (0 = top, 90 = right)"><span>Position °</span><input type="range" min="-180" max="180" step="1" data-op="ang"><output></output></label>
-        <label class="rg" title="How far it sits from the centre"><span>In / out</span><input type="range" min="0" max="560" step="1" data-op="dist"><output></output></label>
+        <label class="chk" title="Stick it to a line of the badge and slide it round"><input type="checkbox" id="ornFollow">Follow path</label>
+        <div id="ornFree">
+          <label class="rg" title="Left / right"><span>Horizontal ↔</span><input type="range" min="-500" max="500" step="1" data-op="x"><output></output></label>
+          <label class="rg" title="Up / down"><span>Vertical ↕</span><input type="range" min="-500" max="500" step="1" data-op="y"><output></output></label>
+        </div>
+        <div id="ornPathF" hidden>
+          <div class="row"><label class="grow"><span>Path</span><select id="ornPath"><option value="outer">Outer line</option><option value="mid">Text line (middle)</option><option value="inner">Inner line</option></select></label><label><span>Layer</span><select id="ornShapeSel"></select></label></div>
+          <label class="rg" title="Slide it round the path (0 = top)"><span>Along path</span><input type="range" min="-180" max="180" step="0.5" data-op="t"><output></output></label>
+          <label class="rg" title="Move it outside (+) or inside (−) the line"><span>Offset in/out</span><input type="range" min="-150" max="150" step="1" data-op="off"><output></output></label>
+          <label class="chk"><input type="checkbox" id="ornTurn">Turn with path</label>
+        </div>
         <label class="rg"><span>Size</span><input type="range" min="4" max="120" step="1" data-b="orn.r"><output></output></label>
         <div class="row nudge"><span class="hint">Nudge</span><button data-onudge="-1,0">←</button><button data-onudge="0,-1">↑</button><button data-onudge="0,1">↓</button><button data-onudge="1,0">→</button><button id="centreOrn" class="mini" title="Put it in the middle">Centre</button></div>
-        <label class="rg"><span>Rotation</span><input type="range" min="-180" max="180" step="1" data-b="orn.rot"><output></output></label>
-        <div class="row"><label><span>Colour</span><input type="color" data-b="orn.color" class="col"></label><label id="ornBerry"><span>Berries</span><input type="color" data-b="orn.color2" class="col"></label><button id="mirrorOrn" class="grow">Mirror copy</button><button id="delOrn" class="danger">Delete</button></div>
+        <label class="rg" id="ornRotRow"><span>Rotation</span><input type="range" min="-180" max="180" step="1" data-b="orn.rot"><output></output></label>
+        <div class="row"><label><span>Colour</span><input type="color" data-b="orn.color" class="col"></label><label id="ornBerry"><span>Berries</span><input type="color" data-b="orn.color2" class="col"></label><button id="mirrorOrn" class="grow">Mirror copy</button><button id="ornLink" class="grow" title="Linked: the mirror copy moves with this one. Tap to let them move separately">🔗 Unlink</button><button id="delOrn" class="danger">Delete</button></div>
       </div>
     </div></details>
     <details name="acc" id="sec-img"><summary>Centre image</summary><div class="body">
