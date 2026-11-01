@@ -368,6 +368,7 @@ function syncUI() {
   $('dragMode').classList.toggle('pan', mode.pan); $('dragMode').innerHTML = mode.pan ? '✋<span class="tl"> Pan</span>' : '▭<span class="tl"> Box</span>';
   const im = S.image; if (im) document.querySelectorAll('[data-imgmodes]').forEach(e => e.hidden = !e.dataset.imgmodes.split(' ').includes(im.mode));
   if (im && im.mode === 'trace') { const pr = procImage(im); $('traceInfo').textContent = pr && pr.paths ? `Traced ${pr.paths.length} vector shape${pr.paths.length === 1 ? '' : 's'}; they export as true paths in SVG and PDF.` : 'Tracing…'; }
+  const oc = curOrn(); if (oc) document.querySelectorAll('[data-op]').forEach(el => { const v = el.dataset.op === 'ang' ? Math.round(Math.atan2(oc.x - C, -(oc.y - C)) * 180 / Math.PI) : Math.round(Math.hypot(oc.x - C, oc.y - C)); if (document.activeElement !== el) el.value = v; el.nextElementSibling.textContent = el.value; });
   $('ornFields').hidden = !curOrn(); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
   $('imgFields').hidden = !S.image;
   $('swatches').innerHTML = S.swatches.map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
@@ -479,6 +480,14 @@ document.querySelectorAll('[data-rel]').forEach(el => {
   });
   el.addEventListener('change', () => { commit(); syncUI(); });
 });
+document.querySelectorAll('[data-op]').forEach(el => {
+  el.addEventListener('input', () => { const o = curOrn(); if (!o) return;
+    const q = document.querySelector('[data-op=ang]'), r = document.querySelector('[data-op=dist]'), a = +q.value * Math.PI / 180, d = +r.value;
+    o.x = f2(C + d * Math.sin(a)); o.y = f2(C - d * Math.cos(a)); el.nextElementSibling.textContent = el.value; render(); });
+  el.addEventListener('change', () => { commit(); syncUI(); });
+});
+document.querySelectorAll('[data-onudge]').forEach(bt => bt.addEventListener('click', () => { const o = curOrn(); if (!o) return; const [x, y] = bt.dataset.onudge.split(',').map(Number); o.x = f2(o.x + x * 2); o.y = f2(o.y + y * 2); update(); commit(); }));
+act('centreOrn', () => { const o = curOrn(); if (o) { o.x = C; o.y = C; } });
 $('multiBtn').onclick = $('multiBtn2').onclick = () => { mode.multi = !mode.multi; syncUI(); };
 $('dragMode').onclick = () => { mode.pan = !mode.pan; syncUI(); };
 $('clearSel').onclick = () => { sel.letters = []; update(); };

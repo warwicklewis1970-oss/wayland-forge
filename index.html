@@ -85,7 +85,10 @@
       <div class="row"><button id="addStar" class="grow">+ Star</button><button id="addDot" class="grow">+ Dot</button><button id="clearOrn" class="danger">Clear all</button></div>
       <div id="ornNone" class="hint">Click an ornament to edit it.</div>
       <div id="ornFields">
+        <label class="rg" title="Where it sits around the shape (0 = top, 90 = right)"><span>Position °</span><input type="range" min="-180" max="180" step="1" data-op="ang"><output></output></label>
+        <label class="rg" title="How far it sits from the centre"><span>In / out</span><input type="range" min="0" max="560" step="1" data-op="dist"><output></output></label>
         <label class="rg"><span>Size</span><input type="range" min="4" max="120" step="1" data-b="orn.r"><output></output></label>
+        <div class="row nudge"><span class="hint">Nudge</span><button data-onudge="-1,0">←</button><button data-onudge="0,-1">↑</button><button data-onudge="0,1">↓</button><button data-onudge="1,0">→</button><button id="centreOrn" class="mini" title="Put it in the middle">Centre</button></div>
         <label class="rg"><span>Rotation</span><input type="range" min="-180" max="180" step="1" data-b="orn.rot"><output></output></label>
         <div class="row"><label><span>Colour</span><input type="color" data-b="orn.color" class="col"></label><button id="mirrorOrn" class="grow">Mirror copy</button><button id="delOrn" class="danger">Delete</button></div>
       </div>
