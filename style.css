@@ -120,3 +120,5 @@ button.mini{padding:1px 7px;font-size:11px;margin-left:6px}
 #laserList .lrow{display:grid;grid-template-columns:1fr 1.15fr;gap:6px;align-items:center;margin:3px 0;padding:2px 4px;border-radius:4px}
 #laserList .lrow span{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #laserList .lrow.on{background:rgba(224,160,67,.18);outline:1px solid #e0a043}
+
+#layerBar{padding:6px 10px;border-bottom:1px solid var(--line);background:#221e1a}#layerBar .row{margin:3px 0}.lbt{color:var(--amber);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.lbb>select{flex:1;min-width:0}.lbb>button{min-width:34px;padding-left:6px;padding-right:6px}

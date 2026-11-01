@@ -19,20 +19,33 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replac
 
 // ---------- state ----------
 const newLayer = (text, side) => ({ id: uid(), text, font: 'Cinzel', size: 70, color: '#1b1b1b', side, ring: 'between', offset: 0, spacing: 4, lift: 0, letters: {} });
-const defaults = () => ({
+const baseDefaults = () => ({ shape: 'circle', rx: 400, ry: 400, sides: 6, points: 5, innerRatio: 0.55, dip: 0.45, corner: 14, smooth: 80, gap: 120, width: 8, stroke: '#1b1b1b', outer: true, inner: true, fillOn: false, fill: '#f4ede0' });
+const newShape = (name, base) => ({ id: uid(), name, visible: true, x: 0, y: 0, scale: 1, rot: 0, base: Object.assign(baseDefaults(), base || {}) });
+const defaults = () => { const d = defaults0(); d.layers.forEach(l => { l.shape = d.shapes[0].id; }); return d; };
+const defaults0 = () => ({
   bg: 'transparent', bgColor: '#ffffff',
-  base: { shape: 'circle', rx: 400, ry: 400, sides: 6, points: 5, innerRatio: 0.55, dip: 0.45, corner: 14, smooth: 80, gap: 120, width: 8, stroke: '#1b1b1b', outer: true, inner: true, fillOn: false, fill: '#f4ede0' },
+  shapes: [newShape('Layer 1')],
   layers: [newLayer('WAYLAND FORGE', 'top'), newLayer('EST. 2026', 'bottom')],
   ornaments: [{ id: uid(), type: 'star', x: 160, y: 500, r: 22, rot: 0, color: '#1b1b1b' }, { id: uid(), type: 'star', x: 840, y: 500, r: 22, rot: 0, color: '#1b1b1b' }],
   image: null, laser: {},
   swatches: ['#1b1b1b', '#ffffff', '#e0a043', '#8b1e1e', '#1e4d8b', '#2f6b3a']
 });
 let S = defaults();
-let sel = { layer: S.layers[0].id, letters: [], orn: null, img: false };
+let sel = { layer: S.layers[0].id, shape: S.shapes[0].id, letters: [], orn: null, img: false };
 let mode = { multi: false, pan: false };
 const hist = { stack: [], i: -1 };
 
 const curLayer = () => S.layers.find(l => l.id === sel.layer) || null;
+// shape layers: each has its own base (shape settings) + position/scale/rotation; text layers belong to one shape
+let CUR = null; // shape being drawn right now (null = the active one)
+const curShape = () => S.shapes.find(s => s.id === sel.shape) || S.shapes[0];
+const SB = () => (CUR || curShape()).base;
+const shapeOf = L => S.shapes.find(s => s.id === L.shape) || S.shapes[0];
+const withShape = (sh, fn) => { const p = CUR; CUR = sh; try { return fn(); } finally { CUR = p; } };
+const shTr = sh => { const k = sh.scale || 1; if (!sh.x && !sh.y && !sh.rot && k === 1) return ''; return `translate(${f2(sh.x)} ${f2(sh.y)}) rotate(${f2(sh.rot)} ${C} ${C}) translate(${f2(C * (1 - k))} ${f2(C * (1 - k))}) scale(${k})`; };
+const shPt = (sh, x, y) => { const k = sh.scale || 1, a = (sh.rot || 0) * Math.PI / 180, u = (x - C) * k, v = (y - C) * k; return { x: C + sh.x + u * Math.cos(a) - v * Math.sin(a), y: C + sh.y + u * Math.sin(a) + v * Math.cos(a) }; };
+const wrapSh = (sh, inner) => { const t = shTr(sh); return t && inner ? `<g transform="${t}">${inner}</g>` : inner; };
+const imgShape = () => S.shapes[0];
 const curOrn = () => S.ornaments.find(o => o.id === sel.orn) || null;
 // multi-letter selection: sel.letters = [{l: layerId, i: glyphIndex}], may span layers
 const isSel = (l, i) => sel.letters.some(s => s.l === l && s.i === i);
@@ -50,7 +63,7 @@ const selObjs = () => sel.letters.map(s => letterObj(s.l, s.i)).filter(Boolean);
 const FILLET = ['polygon', 'star', 'heart'];
 const P2 = (x, y) => ({ x, y });
 function shapeVerts() {
-  const b = S.base, rx = b.rx, ry = b.ry, V = [], R = [], fixed = [], cr = b.corner || 0;
+  const b = SB(), rx = b.rx, ry = b.ry, V = [], R = [], fixed = [], cr = b.corner || 0;
   if (b.shape === 'polygon' || b.shape === 'star') {
     const star = b.shape === 'star', n = star ? b.points * 2 : b.sides;
     for (let i = 0; i < n; i++) {
@@ -129,10 +142,10 @@ function filletD(g) {
   return d + 'Z';
 }
 let geoCache = { key: '', G: null };
-function baseGeo() { const key = JSON.stringify(S.base); if (geoCache.key !== key) geoCache = { key, G: shapeVerts() }; return geoCache.G; }
-function maxInnerGap() { if (!FILLET.includes(S.base.shape)) return Infinity; return -safeOffset(baseGeo(), -2000, 0).d; }
+function baseGeo() { const key = JSON.stringify(SB()); if (geoCache.key !== key) geoCache = { key, G: shapeVerts() }; return geoCache.G; }
+function maxInnerGap() { if (!FILLET.includes(SB().shape)) return Infinity; return -safeOffset(baseGeo(), -2000, 0).d; }
 function ringPts(d, text) {
-  const b = S.base;
+  const b = SB();
   if (FILLET.includes(b.shape)) return filletPts(safeOffset(baseGeo(), d, text ? b.smooth : 0).g);
   const rx = b.rx + d, ry = (b.shape === 'circle' ? b.rx : b.ry) + d, pts = [];
   for (let i = 0; i < 1440; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 1440; pts.push([C + rx * Math.cos(a), C + ry * Math.sin(a)]); }
@@ -163,17 +176,18 @@ function walker(pts, side) {
   } };
 }
 function shapeEl(d, attrs) {
-  const b = S.base;
+  const b = SB();
   if (FILLET.includes(b.shape)) { const r = safeOffset(baseGeo(), d, 0); return `<path d="${filletD(r.g)}" ${attrs}/>`; }
   const rx = b.rx + d, ry = (b.shape === 'circle' ? b.rx : b.ry) + d;
   if (rx <= 0 || ry <= 0) return '';
   return `<ellipse cx="${C}" cy="${C}" rx="${f2(rx)}" ry="${f2(ry)}" ${attrs}/>`;
 }
 // Lay a text layer's glyph outlines along the ring.
-function layoutLayer(Ly) {
+function layoutLayer(Ly) { return withShape(shapeOf(Ly), () => layoutLayer0(Ly)); }
+function layoutLayer0(Ly) {
   const f = fonts[Ly.font]; if (!f || !Ly.text) return [];
   const sc = Ly.size / f.unitsPerEm, cap = ((f.tables.os2 && f.tables.os2.sCapHeight) || f.unitsPerEm * 0.7) * sc;
-  const b = S.base, m = b.width / 2 + 10, gap = Math.min(b.gap, maxInnerGap());
+  const b = SB(), m = b.width / 2 + 10, gap = Math.min(b.gap, maxInnerGap());
   const d = (Ly.ring === 'outer' ? m : Ly.ring === 'inner' ? -gap - m : -gap / 2) + Ly.lift;
   const top = Ly.side === 'top';
   const baseY = Ly.ring === 'between' ? cap / 2 : ((Ly.ring === 'outer') === top ? 0 : cap);
@@ -258,7 +272,7 @@ function hexRgb(h) { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ?
 
 // ---------- centre image: clip geometry + fit/fill ----------
 // Inner-line geometry (identical to the drawn inner line), used whether or not the inner line is drawn.
-function innerClipEl() { return shapeEl(-S.base.gap, '') || shapeEl(0, ''); } // exactly the drawn inner line
+function innerClipEl(tr) { return withShape(imgShape(), () => { const a = tr ? `transform="${tr}"` : ''; return shapeEl(-SB().gap, a) || shapeEl(0, a); }); } // exactly the drawn inner line
 function imgAspect(im) { // content width/height of the image as drawn (meet inside the size×size box)
   const pr = procImage(im); if (pr && pr.paths) return pr.w / pr.h;
   const el = loadedImg(im.src); return el ? el.naturalWidth / el.naturalHeight : 1;
@@ -268,7 +282,10 @@ function innerProbe() { // temporary SVG path of the inner line for hit testing
   g.innerHTML = innerClipEl(); stage.appendChild(g); const el = g.firstElementChild; return { el, bb: el.getBBox(), done: () => g.remove() };
 }
 // Largest image (keeping aspect) that sits entirely inside the inner line; returns {x,y,size}.
-function fitInside(im) {
+function fitInside(im) { return mapImg(fitInside0(im)); }
+function fillInner(im) { return mapImg(fillInner0(im)); }
+function mapImg(r) { const sh = imgShape(), p = shPt(sh, r.x, r.y); return { x: f2(p.x), y: f2(p.y), size: Math.floor(r.size * (sh.scale || 1)) }; }
+function fitInside0(im) {
   const a = imgAspect(im), P = innerProbe(), bb = P.bb, sv = stage;
   const pt = sv.createSVGPoint(), inside = (x, y) => { pt.x = x; pt.y = y; return P.el.isPointInFill(pt); };
   const ok = (cx, cy, s) => { const w = a >= 1 ? s : s * a, h = a >= 1 ? s / a : s, n = 24;
@@ -284,7 +301,7 @@ function fitInside(im) {
   P.done(); best.size = Math.floor(best.size * 0.97); return best; // small margin off the line
 }
 // Smallest image that covers the whole inner shape (so the clip crops it neatly to the line).
-function fillInner(im) {
+function fillInner0(im) {
   const a = imgAspect(im), P = innerProbe(), bb = P.bb; P.done();
   const s = Math.ceil(Math.max(bb.width, bb.height, a >= 1 ? bb.height * a : bb.width / a) + 4);
   return { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, size: s };
@@ -292,12 +309,12 @@ function fillInner(im) {
 
 // ---------- SVG builder (shared by editor and exports) ----------
 function buildArt(editor) {
-  const b = S.base, out = [];
-  if (b.fillOn) out.push(shapeEl(0, `fill="${b.fill}"`));
+  const out = [], vis = S.shapes.filter(s => s.visible !== false);
+  for (const sh of vis) withShape(sh, () => { const b = sh.base; if (b.fillOn) out.push(wrapSh(sh, shapeEl(0, `fill="${b.fill}"`))); });
   if (S.image) {
     const im = S.image, clip = !!im.clip, pr = procImage(im), ek = editor ? ' data-k="img"' : '';
     const cid = editor ? 'wfclip-ed' : 'wfclip-ex'; // distinct ids: editor + export holder can coexist in the DOM
-    if (clip) out.push(`<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse">${innerClipEl()}</clipPath></defs>`);
+    if (clip) out.push(`<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse">${innerClipEl(shTr(imgShape()))}</clipPath></defs>`);
     let el;
     if (pr && pr.paths) { // vector trace: real paths, fitted like preserveAspectRatio=meet
       const k = im.size / Math.max(pr.w, pr.h), x0 = im.x - pr.w * k / 2, y0 = im.y - pr.h * k / 2;
@@ -307,16 +324,29 @@ function buildArt(editor) {
     out.push(`<g${clip ? ` clip-path="url(#${cid})"` : ''}>${el}</g>`);
     if (editor && sel.img) out.push(`<rect x="${im.x - im.size / 2}" y="${im.y - im.size / 2}" width="${im.size}" height="${im.size}" fill="none" stroke="#e0a043" stroke-dasharray="8 6" stroke-width="2" pointer-events="none"/>`);
   }
-  if (b.width > 0) {
-    const st = `fill="none" stroke="${b.stroke}" stroke-width="${b.width}"`;
-    if (b.outer) out.push(shapeEl(0, st));
-    if (b.inner) out.push(shapeEl(-b.gap, st));
-  }
+  for (const sh of vis) withShape(sh, () => {
+    const b = sh.base, part = [];
+    if (b.width > 0) {
+      const st = `fill="none" stroke="${b.stroke}" stroke-width="${b.width}"`;
+      if (b.outer) part.push(shapeEl(0, st));
+      if (b.inner) part.push(shapeEl(-b.gap, st));
+    }
+    if (editor) { // fat invisible strokes: tap a line to pick (and drag) this layer
+      const hs = `fill="none" stroke="transparent" stroke-width="${Math.max(26, b.width + 16)}" pointer-events="stroke" data-k="sh" data-id="${sh.id}"`;
+      part.push(shapeEl(0, hs)); if (b.inner) part.push(shapeEl(-b.gap, hs));
+      if (S.shapes.length > 1 && sh === curShape()) part.push(shapeEl(0, 'fill="none" stroke="#e0a043" stroke-width="2" stroke-dasharray="10 7" vector-effect="non-scaling-stroke" pointer-events="none"'));
+    }
+    for (const L of S.layers) if (shapeOf(L) === sh) part.push(textEl(L, editor));
+    out.push(wrapSh(sh, part.join('')));
+  });
   for (const o of S.ornaments) {
     const shape = o.type === 'star' ? `<path d="${starD(o.r)}"/>` : `<circle r="${o.r}"/>`;
     out.push(`<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})" fill="${o.color}"${editor ? ` data-k="orn" data-id="${o.id}"` : ''}>${shape}${editor && sel.orn === o.id ? `<circle r="${o.r + 8}" fill="none" stroke="#e0a043" stroke-dasharray="6 4" stroke-width="2"/>` : ''}</g>`);
   }
-  for (const L of S.layers) {
+  return out.join('\n');
+}
+function textEl(L, editor) {
+  {
     const g = layoutLayer(L).map(q => {
       if (!editor) return `<path d="${q.d}" transform="${q.tr}"/>`;
       const hi = isSel(L.id, q.i), at = ` data-k="ch" data-l="${L.id}" data-i="${q.i}"`, bb = q.bb, pd = 6;
@@ -324,9 +354,8 @@ function buildArt(editor) {
       const hit = bb ? `<rect data-hit="1"${at} x="${f2(bb.x1 - pd)}" y="${f2(bb.y1 - pd)}" width="${f2(bb.x2 - bb.x1 + 2 * pd)}" height="${f2(bb.y2 - bb.y1 + 2 * pd)}" pointer-events="all" ${hi ? 'fill="#e0a043" fill-opacity="0.18" stroke="#e0a043" stroke-width="1.5" stroke-dasharray="4 3"' : 'fill="none"'}/>` : '';
       return `<g transform="${q.tr}"><path d="${q.d}"${at}${hi ? ' stroke="#e0a043" stroke-width="3"' : ''}/>${hit}</g>`;
     }).join('');
-    out.push(`<g fill="${L.color}">${g}</g>`);
+    return `<g fill="${L.color}">${g}</g>`;
   }
-  return out.join('\n');
 }
 // Full export SVG at a physical page size; artwork (square) fitted centred, bleed added around.
 function exportSVG(W, H, unit, bleed, pxOverride) {
@@ -353,10 +382,14 @@ function syncUI() {
     if (el.type === 'checkbox') el.checked = !!o[key]; else el.value = o[key];
     const out = el.nextElementSibling; if (out && out.tagName === 'OUTPUT') out.textContent = o[key];
   });
-  const sh = S.base.shape;
+  const sh = SB().shape;
   document.querySelectorAll('[data-shapes]').forEach(e => e.hidden = !e.dataset.shapes.split(' ').includes(sh));
-  const mg = maxInnerGap(); $('gapWarn').hidden = !(S.base.gap > mg); $('gapWarn').textContent = `Ring gap limited to ${Math.floor(mg)} for this shape so the inner line can't fold over itself.`;
-  $('layerSel').innerHTML = S.layers.map(l => `<option value="${l.id}"${l.id === sel.layer ? ' selected' : ''}>${esc(l.text || '(empty)')} · ${l.side}</option>`).join('');
+  const mg = maxInnerGap(); $('gapWarn').hidden = !(SB().gap > mg); $('gapWarn').textContent = `Ring gap limited to ${Math.floor(mg)} for this shape so the inner line can't fold over itself.`;
+  const order = S.shapes.slice().reverse();
+  $('shapeSel').innerHTML = order.map(s => `<option value="${s.id}"${s === curShape() ? ' selected' : ''}>${s.visible === false ? '🚫 ' : ''}${esc(s.name)} · ${s.base.shape}</option>`).join('');
+  $('shapeVis').textContent = curShape().visible === false ? 'Show' : 'Hide'; $('shapeDel').disabled = S.shapes.length < 2;
+  $('shapeUp').disabled = curShape() === S.shapes[S.shapes.length - 1]; $('shapeDown').disabled = curShape() === S.shapes[0];
+  $('layerSel').innerHTML = S.layers.filter(l => shapeOf(l) === curShape()).map(l => `<option value="${l.id}"${l.id === sel.layer ? ' selected' : ''}>${esc(l.text || '(empty)')} · ${l.side}</option>`).join('');
   $('layerFields').hidden = !curLayer();
   const n = sel.letters.length;
   $('letterBox').hidden = !n; $('letterNone').hidden = !!n;
@@ -380,7 +413,7 @@ function syncUI() {
   $('undoBtn').disabled = hist.i <= 0; $('redoBtn').disabled = hist.i >= hist.stack.length - 1;
 }
 function target(scope) {
-  return scope === 'base' ? S.base : scope === 'layer' ? curLayer() : scope === 'orn' ? curOrn() : scope === 'img' ? S.image : scope === 'doc' ? S : null;
+  return scope === 'shape' ? curShape() : scope === 'base' ? SB() : scope === 'layer' ? curLayer() : scope === 'orn' ? curOrn() : scope === 'img' ? S.image : scope === 'doc' ? S : null;
 }
 function update() { render(); syncUI(); }
 function commit() {
@@ -394,15 +427,18 @@ function restore(snap) { S = JSON.parse(snap); geoCache.key = ''; fixSel(); upda
 function sanitize(raw) {
   const d = defaults(), o = raw || {};
   const st = { bg: o.bg === 'color' ? 'color' : 'transparent', bgColor: o.bgColor || d.bgColor,
-    base: Object.assign({}, d.base, o.base || {}), swatches: Array.isArray(o.swatches) ? o.swatches : d.swatches,
+    shapes: Array.isArray(o.shapes) && o.shapes.length ? o.shapes.map((x, i) => Object.assign(newShape('Layer ' + (i + 1)), x, { base: Object.assign(baseDefaults(), x.base || {}) })) : [newShape('Layer 1', o.base)], swatches: Array.isArray(o.swatches) ? o.swatches : d.swatches,
     layers: Array.isArray(o.layers) ? o.layers.map(l => Object.assign(newLayer('', 'top'), l)) : d.layers,
     ornaments: Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && (x.type === 'star' || x.type === 'dot')) : d.ornaments,
     image: o.image && o.image.src ? Object.assign(imgDefaults(), o.image) : null,
     laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {} };
-  if (!['circle', 'ellipse', 'polygon', 'star', 'heart'].includes(st.base.shape)) st.base.shape = 'circle';
+  for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
+  const ids = new Set(st.shapes.map(x => x.id)); st.layers.forEach(l => { if (!ids.has(l.shape)) l.shape = st.shapes[0].id; });
   return st; // anything else in old data (frames, templates, packs…) is dropped
 }
-function fixSel() { if (!curLayer()) sel.layer = S.layers[0] ? S.layers[0].id : null; if (!curOrn()) sel.orn = null; if (!S.image) sel.img = false; sel.letters = sel.letters.filter(s => { const L = S.layers.find(x => x.id === s.l); return L && s.i < L.text.length; }); }
+function fixSel() {
+  if (!S.shapes.some(s => s.id === sel.shape)) sel.shape = S.shapes[0].id;
+  if (!curLayer() || shapeOf(curLayer()) !== curShape()) { const f = S.layers.find(l => shapeOf(l) === curShape()); sel.layer = f ? f.id : null; } if (!curOrn()) sel.orn = null; if (!S.image) sel.img = false; sel.letters = sel.letters.filter(s => { const L = S.layers.find(x => x.id === s.l); return L && s.i < L.text.length; }); }
 let saveT; function persist() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { /* storage full (large image) */ } }, 300); }
 
 // ---------- control bindings ----------
@@ -421,12 +457,12 @@ $('fontSel').innerHTML = [...new Set(FONTS.map(f => f[2]))].map(g => `<optgroup 
 $('fontSel').addEventListener('change', () => { const L = curLayer(); if (L && SCRIPT.has(L.font) && L.spacing > 0) { L.spacing = 0; update(); commit(); } $('fontSel').style.fontFamily = `'WF ${$('fontSel').value}'`; });
 $('layerSel').addEventListener('change', e => { sel.layer = e.target.value; update(); });
 const act = (id, fn) => $(id).addEventListener('click', () => { fn(); fixSel(); update(); commit(); });
-act('addLayer', () => { const L = newLayer('NEW TEXT', 'top'); L.ring = 'outer'; S.layers.push(L); sel.layer = L.id; });
+act('addLayer', () => { const L = newLayer('NEW TEXT', 'top'); L.ring = 'outer'; L.shape = curShape().id; S.layers.push(L); sel.layer = L.id; });
 act('delLayer', () => { S.layers = S.layers.filter(l => l.id !== sel.layer); });
 act('dupOpp', () => { const L = curLayer(); if (!L) return; const c = JSON.parse(JSON.stringify(L)); c.id = uid(); c.side = L.side === 'top' ? 'bottom' : 'top'; c.offset = -L.offset; S.layers.push(c); sel.layer = c.id; });
 act('resetLetter', () => { for (const s of sel.letters) { const L = S.layers.find(x => x.id === s.l); if (L) delete L.letters[s.i]; } });
 act('resetLetters', () => { const L = curLayer(); if (L) L.letters = {}; });
-const addOrn = type => { const o = { id: uid(), type, x: C, y: C, r: type === 'star' ? 26 : 10, rot: 0, color: S.base.stroke }; S.ornaments.push(o); sel.orn = o.id; };
+const addOrn = type => { const o = { id: uid(), type, x: C, y: C, r: type === 'star' ? 26 : 10, rot: 0, color: SB().stroke }; S.ornaments.push(o); sel.orn = o.id; };
 act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot'));
 act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), x: ART - o.x, rot: -o.rot }; S.ornaments.push(c); sel.orn = c.id; });
 act('delOrn', () => { S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
@@ -436,10 +472,27 @@ act('fitImg', () => { if (S.image) Object.assign(S.image, fitInside(S.image)); }
 act('fillImg', () => { if (S.image) Object.assign(S.image, fillInner(S.image), { clip: true }); });
 act('delImg', () => { S.image = null; });
 act('addSwatch', () => { const c = $('swatchPick').value; if (!S.swatches.includes(c)) S.swatches.push(c); });
-act('newProj', () => { if (confirm('Start a new design? Unsaved work will be replaced.')) { S = defaults(); sel = { layer: S.layers[0].id, letters: [], orn: null, img: false }; } });
+act('newProj', () => { if (confirm('Start a new design? Unsaved work will be replaced.')) { S = defaults(); sel = { layer: S.layers[0].id, shape: S.shapes[0].id, letters: [], orn: null, img: false }; } });
+// ---------- shape layers ----------
+$('shapeSel').addEventListener('change', e => { sel.shape = e.target.value; sel.letters = []; fixSel(); update(); });
+$('addShape').addEventListener('change', e => { const t = e.target.value; e.target.value = ''; if (!t) return;
+  const sh = newShape('Layer ' + (S.shapes.length + 1), { shape: t, rx: 200, ry: t === 'circle' ? 200 : 160, gap: 70, width: 6 });
+  S.shapes.push(sh); const L = newLayer('NEW TEXT', 'top'); L.size = 40; L.spacing = 2; L.shape = sh.id; S.layers.push(L);
+  sel.shape = sh.id; sel.layer = L.id; sel.letters = []; fixSel(); update(); commit(); openSec('sec-shape'); });
+act('shapeDup', () => { const o = curShape(), c = JSON.parse(JSON.stringify(o)); c.id = uid(); c.name = o.name + ' copy'; c.x = o.x + 40; c.y = o.y + 40;
+  S.shapes.splice(S.shapes.indexOf(o) + 1, 0, c);
+  S.layers.filter(l => shapeOf(l) === o).forEach(l => { const n = JSON.parse(JSON.stringify(l)); n.id = uid(); n.shape = c.id; S.layers.push(n); });
+  sel.shape = c.id; sel.letters = []; });
+act('shapeDel', () => { if (S.shapes.length < 2) return; const o = curShape(); if (!confirm(`Delete "${o.name}" and its text?`)) return;
+  S.layers = S.layers.filter(l => shapeOf(l) !== o); S.shapes = S.shapes.filter(s => s !== o); sel.letters = []; });
+act('shapeRen', () => { const o = curShape(), n = prompt('Name for this layer:', o.name); if (n && n.trim()) o.name = n.trim().slice(0, 30); });
+act('shapeVis', () => { const o = curShape(); o.visible = o.visible === false; });
+const moveShape = d => { const a = S.shapes, i = a.indexOf(curShape()), j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; };
+act('shapeUp', () => moveShape(1)); act('shapeDown', () => moveShape(-1));
+act('shapeCentre', () => { const o = curShape(); o.x = 0; o.y = 0; });
 $('swatches').addEventListener('click', e => {
   const c = e.target.dataset && e.target.dataset.c; if (!c) return;
-  if (curOrn()) curOrn().color = c; else if (curLayer()) curLayer().color = c; else S.base.stroke = c;
+  if (curOrn()) curOrn().color = c; else if (curLayer()) curLayer().color = c; else SB().stroke = c;
   update(); commit();
 });
 $('imgFile').addEventListener('change', e => {
@@ -498,7 +551,7 @@ $('dragMode').onclick = () => { mode.pan = !mode.pan; syncUI(); };
 $('clearSel').onclick = () => { sel.letters = []; update(); };
 act('selAll', () => { const L = curLayer(); if (!L) return; const add = layoutLayer(L).filter(q => q.bb && !isSel(L.id, q.i)).map(q => ({ l: L.id, i: q.i })); sel.letters = sel.letters.concat(add); openSec('sec-letter'); });
 const additive = e => e.shiftKey || e.ctrlKey || e.metaKey || mode.multi;
-function startLetterDrag(p) { drag = { letters: selObjs().map(o => ({ o, x0: o.dx, y0: o.dy })), p }; }
+function startLetterDrag(p) { const L = S.layers.find(x => sel.letters[0] && x.id === sel.letters[0].l); drag = { letters: selObjs().map(o => ({ o, x0: o.dx, y0: o.dy })), p, sh: L ? shapeOf(L) : null }; }
 stage.addEventListener('pointerdown', e => {
   if (drag) return; // second finger etc.
   const t = e.target.closest('[data-k]'), k = t && t.dataset.k, p = svgPt(e);
@@ -509,14 +562,15 @@ stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   sel.img = false;
   if (k === 'ch') {
-    const l = t.dataset.l, i = +t.dataset.i; sel.layer = l; sel.orn = null;
+    const l = t.dataset.l, i = +t.dataset.i; sel.layer = l; sel.orn = null; { const L0 = S.layers.find(x => x.id === l); if (L0) sel.shape = shapeOf(L0).id; }
     if (additive(e)) {
       if (isSel(l, i)) { sel.letters = sel.letters.filter(s => !(s.l === l && s.i === i)); drag = { none: true }; }
       else { sel.letters.push({ l, i }); startLetterDrag(p); }
     } else if (isSel(l, i)) { startLetterDrag(p); drag.collapse = { l, i }; } // drag the whole group; a plain click narrows to this one
     else { sel.letters = [{ l, i }]; startLetterDrag(p); }
     openSec('sec-letter');
-  } else if (k === 'orn') { sel.orn = t.dataset.id; sel.letters = []; const o = curOrn(); drag = { obj: o, x0: o.x, y0: o.y, p }; openSec('sec-orn'); }
+  } else if (k === 'sh') { const sh = S.shapes.find(s => s.id === t.dataset.id); sel.shape = sh.id; sel.orn = null; sel.letters = []; fixSel(); drag = { obj: sh, x0: sh.x, y0: sh.y, p }; if (S.shapes.length > 1) openSec('sec-shape'); }
+  else if (k === 'orn') { sel.orn = t.dataset.id; sel.letters = []; const o = curOrn(); drag = { obj: o, x0: o.x, y0: o.y, p }; openSec('sec-orn'); }
   else if (k === 'img') { sel.img = true; sel.orn = null; sel.letters = []; drag = { obj: S.image, x0: S.image.x, y0: S.image.y, p }; openSec('sec-img'); }
   else { sel.orn = null; if (!additive(e)) sel.letters = []; drag = { mq: true, p, cx: e.clientX, cy: e.clientY }; }
   drag.sx = e.clientX; drag.sy = e.clientY;
@@ -532,7 +586,8 @@ stage.addEventListener('pointermove', e => {
   if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 3) return; // click tolerance
   drag.moved = true; const p = svgPt(e), dx = p.x - drag.p.x, dy = p.y - drag.p.y;
   if (drag.mq) { drawMarquee(p); return; }
-  if (drag.letters) for (const q of drag.letters) { q.o.dx = f2(q.x0 + dx); q.o.dy = f2(q.y0 + dy); }
+  if (drag.letters) { let ux = dx, uy = dy; if (drag.sh) { const a = -(drag.sh.rot || 0) * Math.PI / 180, k = drag.sh.scale || 1; ux = (dx * Math.cos(a) - dy * Math.sin(a)) / k; uy = (dx * Math.sin(a) + dy * Math.cos(a)) / k; }
+    for (const q of drag.letters) { q.o.dx = f2(q.x0 + ux); q.o.dy = f2(q.y0 + uy); } }
   else { drag.obj.x = f2(drag.x0 + dx); drag.obj.y = f2(drag.y0 + dy); }
   render();
 });
@@ -653,26 +708,28 @@ $('panelToggle').onclick = () => setSheet(panel.dataset.snap === 'collapsed');
 // ---------- laser pack (LaserGRBL): one file per job, all on the same mm page ----------
 const ROLES = [['off', 'Skip'], ['image', 'Image (photo engrave)'], ['etch', 'Etch (fill)'], ['cutin', 'Cut inside edge'], ['cutout', 'Cut outside edge']];
 function laserItems() {
-  const b = S.base, it = [];
-  if (b.outer) it.push({ key: 'outer', name: 'Outer line', def: 'cutout' });
-  if (b.inner) it.push({ key: 'inner', name: 'Inner line', def: 'etch' });
-  if (b.fillOn) it.push({ key: 'fill', name: 'Shape fill', def: 'off' });
-  for (const L of S.layers) if (L.text) it.push({ key: 't:' + L.id, name: 'Text: ' + L.text, def: 'etch' });
+  const it = [], many = S.shapes.length > 1;
+  S.shapes.forEach((sh, i) => { if (sh.visible === false) return; const b = sh.base, pre = i ? sh.id + ':' : '', nm = many ? sh.name + ' – ' : '';
+    if (b.outer) it.push({ key: pre + 'outer', part: 'outer', sh, name: nm + 'Outer line', def: i ? 'etch' : 'cutout' });
+    if (b.inner) it.push({ key: pre + 'inner', part: 'inner', sh, name: nm + 'Inner line', def: 'etch' });
+    if (b.fillOn) it.push({ key: pre + 'fill', part: 'fill', sh, name: nm + 'Shape fill', def: 'off' });
+    for (const L of S.layers) if (L.text && shapeOf(L) === sh) it.push({ key: 't:' + L.id, sh, name: nm + 'Text: ' + L.text, def: 'etch' }); });
   if (S.ornaments.length) it.push({ key: 'orn', name: 'Stars & dots', def: 'etch' });
   if (S.image) it.push({ key: 'img', name: 'Centre image' + (S.image.mode === 'trace' ? ' (trace)' : S.image.mode === 'sil' ? ' (silhouette)' : ''), def: S.image.mode === 'trace' ? 'etch' : 'image' });
   return it;
 }
 const roleOf = it => S.laser[it.key] || it.def;
 function ringD(d) {
-  const b = S.base;
+  const b = SB();
   if (FILLET.includes(b.shape)) return filletD(safeOffset(baseGeo(), d, 0).g);
   const rx = b.rx + d, ry = (b.shape === 'circle' ? b.rx : b.ry) + d; if (rx <= 0.5 || ry <= 0.5) return '';
   return `M${f2(C - rx)} ${C}A${f2(rx)} ${f2(ry)} 0 1 0 ${f2(C + rx)} ${C}A${f2(rx)} ${f2(ry)} 0 1 0 ${f2(C - rx)} ${C}Z`;
 }
 function imgBox(im) { const a = imgAspect(im), w = a >= 1 ? im.size : im.size * a, h = a >= 1 ? im.size / a : im.size; return `M${f2(im.x - w / 2)} ${f2(im.y - h / 2)}h${f2(w)}v${f2(h)}h${f2(-w)}Z`; }
 // Markup (artwork units) for one item. kind: 'pic' (as it looks), 'fill' (solid black shapes), 'cutout' / 'cutin' (outline paths, no style).
-function laserPart(it, kind) {
-  const b = S.base, k = it.key, cut = kind === 'cutout' || kind === 'cutin';
+function laserPart(it, kind) { const sh = it.sh || imgShape(); const r = withShape(sh, () => laserPart0(it, kind)); return it.sh ? wrapSh(sh, r) : r; }
+function laserPart0(it, kind) {
+  const b = SB(), k = it.part || it.key, cut = kind === 'cutout' || kind === 'cutin';
   if (k === 'outer' || k === 'inner') {
     const d0 = k === 'outer' ? 0 : -b.gap, w = b.width / 2;
     if (cut) { const d = ringD(kind === 'cutout' ? d0 + w : d0 - w); return d ? `<path d="${d}"/>` : ''; }
@@ -683,12 +740,12 @@ function laserPart(it, kind) {
   if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? ` fill="${L.color}"` : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
   if (k === 'img' && S.image) {
     const im = S.image, pr = procImage(im), vec = pr && pr.paths;
-    if (cut && (im.clip || !vec)) return `<path d="${im.clip ? (innerClipEl().match(/ d="([^"]+)"/) || [, ringD(-b.gap)])[1] || ringD(-b.gap) : imgBox(im)}"/>`;
+    if (cut && (im.clip || !vec)) return im.clip ? innerClipEl(shTr(imgShape())) : `<path d="${imgBox(im)}"/>`;
     if (vec && (cut || kind === 'fill')) { const s = im.size / Math.max(pr.w, pr.h);
       return `<g transform="translate(${f2(im.x - pr.w * s / 2)} ${f2(im.y - pr.h * s / 2)}) scale(${+s.toFixed(5)})" fill-rule="evenodd">${pr.paths.map(d => `<path d="${d}"/>`).join('')}</g>`; }
     const cid = 'wflz' + uid(); // raster picture (also used for "etch" of a photo/silhouette: it goes in the etch PNG)
     const el = `<image href="${esc(pr && pr.url ? pr.url : im.src)}" x="${f2(im.x - im.size / 2)}" y="${f2(im.y - im.size / 2)}" width="${im.size}" height="${im.size}" preserveAspectRatio="xMidYMid meet"/>`;
-    return im.clip ? `<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse">${innerClipEl()}</clipPath></defs><g clip-path="url(#${cid})">${el}</g>` : el;
+    return im.clip ? `<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse">${innerClipEl(shTr(imgShape()))}</clipPath></defs><g clip-path="url(#${cid})">${el}</g>` : el;
   }
   return '';
 }
@@ -798,7 +855,7 @@ window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; }
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW failed', err)));
 
 // ---------- boot ----------
-window.WF = { openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, doExport, update, maxInnerGap, laserPack, laserItems };
+window.WF = { openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
 (async () => {
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
   try { const saved = JSON.parse(localStorage.getItem(STORE) || 'null'); if (saved && Array.isArray(saved.layers)) { S = sanitize(saved); fixSel(); } } catch (e) { /* ignore bad autosave */ }

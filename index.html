@@ -32,7 +32,16 @@
   </section>
   <aside id="panel" data-snap="small">
     <div id="sheetHandle" role="button" tabindex="0" aria-label="Resize controls (tap to cycle sizes)"><span>Controls</span></div>
-    <details name="acc" id="sec-shape"><summary>Shape</summary><div class="body">
+    <div id="layerBar">
+      <div class="row"><b class="lbt">Layers</b><select id="shapeSel" class="grow" aria-label="Active layer (top of list = in front)"></select><button id="shapeVis" class="mini2" title="Show or hide this layer">Hide</button></div>
+      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add layer</option><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
+    </div>
+    <details name="acc" id="sec-shape"><summary>Shape &amp; position</summary><div class="body">
+      <label class="rg"><span>Move X</span><input type="range" min="-500" max="500" step="1" data-b="shape.x"><output></output></label>
+      <label class="rg"><span>Move Y</span><input type="range" min="-500" max="500" step="1" data-b="shape.y"><output></output></label>
+      <label class="rg"><span>Scale</span><input type="range" min="0.2" max="1.5" step="0.01" data-b="shape.scale"><output></output></label>
+      <label class="rg"><span>Turn</span><input type="range" min="-180" max="180" step="1" data-b="shape.rot"><output></output></label>
+      <div class="row"><button id="shapeCentre" class="grow">Centre this layer</button></div>
       <div class="g2">
         <label><span>Type</span><select data-b="base.shape"><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option></select></label>
         <div class="checks"><label class="chk"><input type="checkbox" data-b="base.outer">Outer</label><label class="chk"><input type="checkbox" data-b="base.inner">Inner</label></div>
@@ -53,7 +62,7 @@
         <label class="chk"><input type="checkbox" data-b="base.fillOn">Fill <input type="color" data-b="base.fill" class="col"></label>
       </div>
     </div></details>
-    <details name="acc" id="sec-text"><summary>Text layers</summary><div class="body">
+    <details name="acc" id="sec-text"><summary>Text on this layer</summary><div class="body">
       <div class="row"><select id="layerSel" class="grow" aria-label="Text layer"></select><button id="addLayer" title="Add text layer">+ Add</button></div>
       <div id="layerFields">
         <label class="full"><span>Text</span><input type="text" data-b="layer.text" maxlength="80"></label>
