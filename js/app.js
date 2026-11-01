@@ -206,6 +206,46 @@ function layoutLayer0(Ly) {
       tr: `translate(${f2(p.x + (a.dx || 0))} ${f2(p.y + (a.dy || 0))}) rotate(${f2(ang * 180 / Math.PI + (a.rot || 0))}) scale(${a.scale || 1})` };
   });
 }
+
+// ---- Xmas & music ornaments: closed paths in units of r, centred on 0,0 ----
+const ORN_TYPES = ['star', 'dot', 'holly1', 'holly2', 'note', 'notes'];
+const ORN_R = { star: 26, dot: 10, holly1: 30, holly2: 34, note: 26, notes: 30 };
+function leafPts(len, wid, k) { // spiky holly leaf along +x from 0 to len
+  const P = [[0, 0]], top = [], bot = [];
+  for (let i = 1; i <= k; i++) { const u = i / (k + 1), w = wid * Math.sin(Math.PI * u) ** 0.7; top.push([u * len, w * 1.12, (u - 0.5 / (k + 1)) * len, w * 0.55]); }
+  return { top, len };
+}
+function leafD(len, wid, cx, cy, ang, vein) {
+  const k = 4, c = Math.cos(ang), s = Math.sin(ang), T = (x, y) => f2(cx + x * c - y * s) + ' ' + f2(cy + x * s + y * c);
+  const w = u => wid * Math.pow(Math.sin(Math.PI * u), 0.75);
+  let d = `M${T(0, 0)}`;
+  for (const sg of [1, -1]) {
+    const us = []; for (let i = 1; i <= k; i++) us.push(i / (k + 1)); us.push(1);
+    let prev = 0; const seq = sg === 1 ? us : us.slice(0, -1).reverse().concat([0]);
+    if (sg === 1) { for (const u of seq) { const m = (prev + u) / 2; const tip = u === 1 ? [len, 0] : [u * len, sg * w(u) * 1.15]; d += ` Q${T(m * len, sg * w(m) * 0.55)} ${T(tip[0], tip[1])}`; prev = u; } }
+    else { prev = 1; for (const u of seq) { const m = (prev + u) / 2; const tip = u === 0 ? [0, 0] : [u * len, sg * w(u) * 1.15]; d += ` Q${T(m * len, sg * w(m) * 0.55)} ${T(tip[0], tip[1])}`; prev = u; } }
+  }
+  d += 'Z';
+  if (vein) { const a = len * 0.12, b = len * 0.86, h = Math.max(wid * 0.07, 0.6); d += ` M${T(a, 0)} Q${T((a + b) / 2, h)} ${T(b, 0)} Q${T((a + b) / 2, -h)} ${T(a, 0)}Z`; }
+  return d;
+}
+const circD = (x, y, r) => `M${f2(x - r)} ${f2(y)}a${f2(r)} ${f2(r)} 0 1 0 ${f2(2 * r)} 0a${f2(r)} ${f2(r)} 0 1 0 ${f2(-2 * r)} 0Z`;
+const ellD = (x, y, rx, ry, a) => { const c = Math.cos(a), s = Math.sin(a); return `M${f2(x - rx * c)} ${f2(y - rx * s)}A${f2(rx)} ${f2(ry)} ${f2(a * 180 / Math.PI)} 1 0 ${f2(x + rx * c)} ${f2(y + rx * s)}A${f2(rx)} ${f2(ry)} ${f2(a * 180 / Math.PI)} 1 0 ${f2(x - rx * c)} ${f2(y - rx * s)}Z`; };
+// returns {body, berries} path data
+function ornParts(o) {
+  const r = o.r, D = Math.PI / 180;
+  if (o.type === 'holly1') return { body: leafD(r * 1.9, r * 0.42, -r * 0.75, r * 0.55, -35 * D, true), berries: circD(-r * 0.62, r * 0.62, r * 0.24) };
+  if (o.type === 'holly2') return { body: leafD(r * 1.5, r * 0.36, -r * 0.08, r * 0.35, -150 * D, true) + leafD(r * 1.5, r * 0.36, r * 0.08, r * 0.35, -30 * D, true), berries: circD(-r * 0.2, r * 0.5, r * 0.2) + circD(r * 0.2, r * 0.5, r * 0.2) + circD(0, r * 0.82, r * 0.2) };
+  if (o.type === 'note') { const hx = -r * 0.3, hy = r * 0.62, sw = r * 0.11, sx = hx + r * 0.36; return { body: ellD(hx, hy, r * 0.42, r * 0.3, -22 * D) + `M${f2(sx - sw)} ${f2(hy - r * 0.05)}L${f2(sx - sw)} ${f2(-r)}L${f2(sx)} ${f2(-r)}C${f2(sx + r * 0.1)} ${f2(-r * 0.6)} ${f2(sx + r * 0.75)} ${f2(-r * 0.45)} ${f2(sx + r * 0.45)} ${f2(r * 0.15)}C${f2(sx + r * 0.55)} ${f2(-r * 0.3)} ${f2(sx + r * 0.2)} ${f2(-r * 0.45)} ${f2(sx)} ${f2(-r * 0.55)}L${f2(sx)} ${f2(hy - r * 0.05)}Z`, berries: '' }; }
+  if (o.type === 'notes') { const sw = r * 0.11, b = r * 0.22, H = []; let d = ''; for (const [hx, hy] of [[-r * 0.62, r * 0.7], [r * 0.48, r * 0.5]]) { d += ellD(hx, hy, r * 0.34, r * 0.25, -22 * D); H.push([hx + r * 0.29, hy]); } const [a, c] = H, ya = -r * 0.75, yc = -r * 0.95; d += `M${f2(a[0] - sw)} ${f2(a[1] - r * 0.05)}L${f2(a[0] - sw)} ${f2(ya)}L${f2(c[0])} ${f2(yc)}L${f2(c[0])} ${f2(c[1] - r * 0.05)}L${f2(c[0] - sw)} ${f2(c[1] - r * 0.05)}L${f2(c[0] - sw)} ${f2(yc + b)}L${f2(a[0])} ${f2(ya + b)}L${f2(a[0])} ${f2(a[1] - r * 0.05)}Z`; return { body: d, berries: '' }; }
+  return null;
+}
+function ornSvg(o, pic) { // inner markup for one ornament; pic=false => single fill inherited
+  if (o.type === 'star') return `<path d="${starD(o.r)}"/>`;
+  if (o.type === 'dot') return `<circle r="${o.r}"/>`;
+  const p = ornParts(o); if (!p) return '';
+  return `<path fill-rule="evenodd" d="${p.body}"/>` + (p.berries ? `<path d="${p.berries}"${pic && o.color2 ? ` fill="${o.color2}"` : ''}/>` : '');
+}
 function starD(r) {
   let d = ''; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.42 : r; d += (i ? 'L' : 'M') + f2(rr * Math.cos(a)) + ' ' + f2(rr * Math.sin(a)); }
   return d + 'Z';
@@ -340,8 +380,8 @@ function buildArt(editor) {
     out.push(wrapSh(sh, part.join('')));
   });
   for (const o of S.ornaments) {
-    const shape = o.type === 'star' ? `<path d="${starD(o.r)}"/>` : `<circle r="${o.r}"/>`;
-    out.push(`<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})" fill="${o.color}"${editor ? ` data-k="orn" data-id="${o.id}"` : ''}>${shape}${editor && sel.orn === o.id ? `<circle r="${o.r + 8}" fill="none" stroke="#e0a043" stroke-dasharray="6 4" stroke-width="2"/>` : ''}</g>`);
+    const shape = ornSvg(o, true);
+    out.push(`<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}" fill="${o.color}"${editor ? ` data-k="orn" data-id="${o.id}"` : ''}>${shape}${editor && sel.orn === o.id ? `<circle r="${o.r * (o.type === 'star' || o.type === 'dot' ? 1 : 1.15) + 8}" fill="none" stroke="#e0a043" stroke-dasharray="6 4" stroke-width="2"/>` : ''}</g>`);
   }
   return out.join('\n');
 }
@@ -406,7 +446,7 @@ function syncUI() {
   const im = S.image; if (im) document.querySelectorAll('[data-imgmodes]').forEach(e => e.hidden = !e.dataset.imgmodes.split(' ').includes(im.mode));
   if (im && im.mode === 'trace') { const pr = procImage(im); $('traceInfo').textContent = pr && pr.paths ? `Traced ${pr.paths.length} vector shape${pr.paths.length === 1 ? '' : 's'}; they export as true paths in SVG and PDF.` : 'Tracing…'; }
   const oc = curOrn(); if (oc) document.querySelectorAll('[data-op]').forEach(el => { const v = el.dataset.op === 'ang' ? Math.round(Math.atan2(oc.x - C, -(oc.y - C)) * 180 / Math.PI) : Math.round(Math.hypot(oc.x - C, oc.y - C)); if (document.activeElement !== el) el.value = v; el.nextElementSibling.textContent = el.value; });
-  $('ornFields').hidden = !curOrn(); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
+  $('ornFields').hidden = !curOrn(); $('ornBerry').hidden = !(curOrn() && /holly/.test(curOrn().type)); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
   $('imgFields').hidden = !S.image;
   $('swatches').innerHTML = S.swatches.map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
   laserUI(); if (curLayer()) $('fontSel').style.fontFamily = `'WF ${curLayer().font}'`;
@@ -429,7 +469,7 @@ function sanitize(raw) {
   const st = { bg: o.bg === 'color' ? 'color' : 'transparent', bgColor: o.bgColor || d.bgColor,
     shapes: Array.isArray(o.shapes) && o.shapes.length ? o.shapes.map((x, i) => Object.assign(newShape('Layer ' + (i + 1)), x, { base: Object.assign(baseDefaults(), x.base || {}) })) : [newShape('Layer 1', o.base)], swatches: Array.isArray(o.swatches) ? o.swatches : d.swatches,
     layers: Array.isArray(o.layers) ? o.layers.map(l => Object.assign(newLayer('', 'top'), l)) : d.layers,
-    ornaments: Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && (x.type === 'star' || x.type === 'dot')) : d.ornaments,
+    ornaments: Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)) : d.ornaments,
     image: o.image && o.image.src ? Object.assign(imgDefaults(), o.image) : null,
     laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {} };
   for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
@@ -462,9 +502,9 @@ act('delLayer', () => { S.layers = S.layers.filter(l => l.id !== sel.layer); });
 act('dupOpp', () => { const L = curLayer(); if (!L) return; const c = JSON.parse(JSON.stringify(L)); c.id = uid(); c.side = L.side === 'top' ? 'bottom' : 'top'; c.offset = -L.offset; S.layers.push(c); sel.layer = c.id; });
 act('resetLetter', () => { for (const s of sel.letters) { const L = S.layers.find(x => x.id === s.l); if (L) delete L.letters[s.i]; } });
 act('resetLetters', () => { const L = curLayer(); if (L) L.letters = {}; });
-const addOrn = type => { const o = { id: uid(), type, x: C, y: C, r: type === 'star' ? 26 : 10, rot: 0, color: SB().stroke }; S.ornaments.push(o); sel.orn = o.id; };
-act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot'));
-act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), x: ART - o.x, rot: -o.rot }; S.ornaments.push(c); sel.orn = c.id; });
+const addOrn = type => { const o = { id: uid(), type, x: C, y: C, r: ORN_R[type] || 20, rot: 0, color: (type === 'holly1' || type === 'holly2') ? '#1f6b34' : SB().stroke, ...(type === 'holly1' || type === 'holly2' ? { color2: '#c0262d' } : {}) }; S.ornaments.push(o); sel.orn = o.id; };
+act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot')); act('addHolly1', () => addOrn('holly1')); act('addHolly2', () => addOrn('holly2')); act('addNote', () => addOrn('note')); act('addNotes', () => addOrn('notes'));
+act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), x: ART - o.x, rot: -o.rot, flip: !o.flip }; S.ornaments.push(c); sel.orn = c.id; });
 act('delOrn', () => { S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
 act('clearOrn', () => { S.ornaments = []; });
 act('centreImg', () => { if (S.image) { S.image.x = C; S.image.y = C; } });
@@ -714,7 +754,7 @@ function laserItems() {
     if (b.inner) it.push({ key: pre + 'inner', part: 'inner', sh, name: nm + 'Inner line', def: 'etch' });
     if (b.fillOn) it.push({ key: pre + 'fill', part: 'fill', sh, name: nm + 'Shape fill', def: 'off' });
     for (const L of S.layers) if (L.text && shapeOf(L) === sh) it.push({ key: 't:' + L.id, sh, name: nm + 'Text: ' + L.text, def: 'etch' }); });
-  if (S.ornaments.length) it.push({ key: 'orn', name: 'Stars & dots', def: 'etch' });
+  if (S.ornaments.length) it.push({ key: 'orn', name: 'Ornaments', def: 'etch' });
   if (S.image) it.push({ key: 'img', name: 'Centre image' + (S.image.mode === 'trace' ? ' (trace)' : S.image.mode === 'sil' ? ' (silhouette)' : ''), def: S.image.mode === 'trace' ? 'etch' : 'image' });
   return it;
 }
@@ -736,7 +776,7 @@ function laserPart0(it, kind) {
     return w > 0 ? `<path d="${ringD(d0 + w)}${ringD(d0 - w)}" fill-rule="evenodd"${kind === 'pic' ? ` fill="${b.stroke}"` : ''}/>` : '';
   }
   if (k === 'fill') return `<path d="${ringD(0)}"${kind === 'pic' ? ` fill="${b.fill}"` : ''}/>`;
-  if (k === 'orn') return S.ornaments.map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})"${kind === 'pic' ? ` fill="${o.color}"` : ''}>${o.type === 'star' ? `<path d="${starD(o.r)}"/>` : `<circle r="${o.r}"/>`}</g>`).join('');
+  if (k === 'orn') return S.ornaments.map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' ? ` fill="${o.color}"` : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
   if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? ` fill="${L.color}"` : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
   if (k === 'img' && S.image) {
     const im = S.image, pr = procImage(im), vec = pr && pr.paths;
