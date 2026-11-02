@@ -907,49 +907,78 @@ function makeZip(files) { // plain "stored" zip: opens in Windows Explorer with 
   e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cl, true); e.setUint32(16, off, true);
   return new Blob([...parts, ...cen, e.buffer], { type: 'application/zip' });
 }
-async function laserPack() {
+function pngDpi(u, dpi) { // insert a pHYs chunk (pixels per metre) right after IHDR so LaserGRBL knows the real size
+  const ppm = Math.round(dpi / 0.0254), c = new Uint8Array(21), v = new DataView(c.buffer);
+  v.setUint32(0, 9); c.set([112, 72, 89, 115], 4); v.setUint32(8, ppm); v.setUint32(12, ppm); c[16] = 1; v.setUint32(17, crc32(c.subarray(4, 17)));
+  const o = new Uint8Array(u.length + 21); o.set(u.subarray(0, 33)); o.set(c, 33); o.set(u.subarray(33), 54); return o;
+}
+// Build the list of steps (one file each). Every file is the same W x H mm page, origin = bottom-left corner.
+async function laserSteps() {
   const W = +$('lzW').value, H = +$('lzH').value, dpi = +$('lzDpi').value || 254, marks = $('lzMarks').checked;
   if (!(W >= 5 && H >= 5)) throw new Error('Enter the size in mm.');
   const P = lzPage(W, H), hair = f2(0.1 * P.k), items = laserItems(), by = r => items.filter(it => roleOf(it) === r);
   const imgItems = by('image'), etch = by('etch'), cin = by('cutin'), cout = by('cutout');
   if (!imgItems.length && !etch.length && !cin.length && !cout.length) throw new Error('Every part is set to Skip.');
-  const files = [], jobs = []; let n = 0;
-  const mk = (st) => marks ? lzMarks(P, st) : '';
-  if (imgItems.length) { const f = `${++n}-image.png`; files.push({ name: f, data: await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"')) }); jobs.push([f, 'Image engrave (photo)', imgItems]); }
-  if (etch.length) {
-    const vec = etch.filter(it => !(it.key === 'img' && !(procImage(S.image) || {}).paths)), ras = etch.map(it => laserPart(it, 'fill')).join('');
-    const f = `${++n}-etch.png`; files.push({ name: f, data: await lzPNG(W, H, dpi, `<g fill="#000">${ras}</g>` + mk(' fill="#000"')) }); jobs.push([f, 'Etch (solid fill) - recommended', etch]);
-    if (vec.length) files.push({ name: `${n}-etch-vector.svg`, data: lzSVG(W, H, `<g fill="#000" stroke="none">${vec.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"'), 'Etch (vector)') });
-  }
-  const cutFile = (list, kind, label, slug) => { const f = `${++n}-${slug}.svg`;
-    files.push({ name: f, data: lzSVG(W, H, `<g fill="none" stroke="#000" stroke-width="${hair}">${list.map(it => laserPart(it, kind)).join('')}${mk('')}</g>`, label) }); jobs.push([f, label, list]); };
-  if (cin.length) cutFile(cin, 'cutin', 'Cut inside edges', 'cut-inside');
-  if (cout.length) cutFile(cout, 'cutout', 'Cut outside edge (last)', 'cut-outside');
-  files.push({ name: 'README.txt', data: lzReadme(W, H, dpi, jobs, marks, files) });
-  const blob = makeZip(files);
-  download(blob, 'wayland-forge-laser-' + new Date().toISOString().slice(0, 10) + '.zip');
-  return `${files.length} files, ${Math.max(1, Math.round(blob.size / 1024))} KB · ${W}×${H} mm`;
+  const mk = st => marks ? lzMarks(P, st) : '', st = [], lpm = Math.round(dpi / 25.4 * 10) / 10, sz = `${f2(W)}x${f2(H)}mm`;
+  const nm = l => l.map(x => x.name.replace(/^.* – /, '')).join(', ');
+  if (imgItems.length) st.push({ kind: 'ENGRAVE', what: 'photo', type: 'png', items: imgItems, mode: `Line To Line Tracing, ${lpm} lines/mm (or 1bit BW Dithering)`,
+    warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
+    data: async () => pngDpi(await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"')), dpi) });
+  if (etch.length) st.push({ kind: 'ETCH', what: [...new Set(etch.map(x => x.key === 'orn' ? 'ornaments' : x.key === 'img' ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+'), type: 'png', items: etch, mode: `Line To Line Tracing, ${lpm} lines/mm`,
+    warn: 'Solid black areas. Normal etch power.',
+    data: async () => pngDpi(await lzPNG(W, H, dpi, `<g fill="#000">${etch.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"')), dpi) });
+  const cut = (list, kind, label, warn) => st.push({ kind: 'CUT', what: label, type: 'svg', items: list, mode: 'Vector (SVG) - LaserGRBL takes the size from the file', warn,
+    data: async () => lzSVG(W, H, `<g fill="none" stroke="#000" stroke-width="${hair}">${list.map(it => laserPart(it, kind)).join('')}${mk('')}</g>`, label) });
+  if (cin.length) cut(cin, 'cutin', 'inside', 'Cutting power. Run passes until it goes through.');
+  if (cout.length) cut(cout, 'cutout', 'outside', 'Always LAST - the piece is free after this.');
+  st.forEach((s, i) => { s.n = i + 1; s.W = W; s.H = H; s.dpi = dpi; s.px = s.type === 'png' ? [Math.round(W / 25.4 * dpi), Math.round(H / 25.4 * dpi)] : null;
+    s.file = `${s.n} - ${s.kind} ${s.what.replace(/[\\/:*?"<>|]/g, '').slice(0, 40)} (${s.type.toUpperCase()}, ${sz}).${s.type}`; });
+  return st;
 }
-function lzReadme(W, H, dpi, jobs, marks, files) {
-  const L = [`WAYLAND FORGE - LASER PACK`, `Page size: ${W} x ${H} mm (every file is exactly this size, same corner = same position)`, ``, `JOBS - load them in this order (engrave first, cut the outside last so the piece doesn't move):`];
-  jobs.forEach(([f, label, list], i) => L.push(`  ${i + 1}. ${f}  -  ${label}  (${list.map(x => x.name).join(', ')})`));
-  if (files.some(f => /etch-vector/.test(f.name))) L.push(`  (extra) *-etch-vector.svg  -  the etch as vector outlines, only if you prefer vector engraving. Use EITHER the etch PNG OR this, not both.`);
-  L.push(``, `HOW TO LOAD IN LASERGRBL`,
-    `1. Unzip this folder first (right-click > Extract All).`,
-    `2. File > Open File, pick job 1.`,
-    `   - For a .png: in the import window choose "Line To Line Tracing" (or "1bit Dithering" for photos), Next.`,
-    `     In "Target image size": set Width = ${W} mm, Height = ${H} mm, Offset X = 0, Y = 0. Untick Autosize if it changes the size.`,
-    `     The PNG is ${Math.round(dpi / 25.4 * 10) / 10} lines/mm (${dpi} DPI) - set Resolution to match.`,
-    `   - For a .svg: LaserGRBL reads the mm size by itself. Type your speed / power / passes.`,
-    `3. File > Append File, pick the next job, type its own speed / power / passes. Repeat for every job in order.`,
-    `4. Use the Frame / bounding-box button to check the position on your material, then run.`,
-    ``, `ALIGNMENT`,
-    `All files share one page (${W} x ${H} mm) with the same origin, so they land on top of each other.`,
-    `A PNG keeps its full white border, so always give it the full page size and 0,0 offset as above.`,
-    marks ? `Corner marks are ON: each file has four 0.4 mm squares at the page corners so every file has the same outline. They will burn tiny dots - put them off the piece or tape over.` : `If LaserGRBL ever shifts one file against another, re-export with "Tiny corner marks" ticked.`,
-    ``, `Cut lines are 0.1 mm hairlines, letters are outlines (no fonts needed). No kerf offset is applied.`, `Laser power, speed and passes are NOT in these files - you type them in LaserGRBL for each job.`);
+let lzLast = null;
+async function laserPack() {
+  const st = await laserSteps(), files = [];
+  for (const s of st) { s.bytes = await s.data(); files.push({ name: s.file, data: s.bytes }); }
+  files.push({ name: '0 - README (read first).txt', data: lzReadme(st, $('lzMarks').checked) });
+  const blob = makeZip(files); lzLast = st;
+  download(blob, 'wayland-forge-laser-' + new Date().toISOString().slice(0, 10) + '.zip');
+  lzStepsUI(st);
+  return `${st.length} steps, ${Math.max(1, Math.round(blob.size / 1024))} KB · ${st[0].W}×${st[0].H} mm`;
+}
+function lzStepText(s) {
+  const L = [`STEP ${s.n}: ${s.kind} ${s.what}`, `  File: ${s.file}`, `  Size: W ${f2(s.W)} mm  x  H ${f2(s.H)} mm   Offset X 0, Y 0`];
+  if (s.type === 'png') L.push(`  Image: ${s.px[0]} x ${s.px[1]} px at ${s.dpi} DPI (= exactly ${f2(s.W)} x ${f2(s.H)} mm)`,
+    `  LaserGRBL: File > Open File > pick this PNG > "Import Raster Image" window: ${s.mode} > Next`,
+    `             "Target image" window: Image Size and Position [mm]: tick Autosize, press the DPI button next to it (uses ${s.dpi} DPI from the file)`,
+    `             -> W must read ${f2(s.W)}, H ${f2(s.H)}. Offset X 0, Y 0. Then Engraving Speed, S-MIN 0, S-MAX, Create!`);
+  else L.push(`  LaserGRBL: File > Open File (or Append File) > pick this SVG > "Target image" window: Border Speed, S-MIN, S-MAX > Create!`,
+    `             (LaserGRBL has no size box for SVG - the size comes from the file. Check the ruler/bounding box in the preview afterwards.)`);
+  L.push(`  ${s.warn}`, `  Your settings:  speed ________  S-MAX ________  passes ____  result ______________`, ``);
+  return L.join('\r\n');
+}
+function lzReadme(st, marks) {
+  const s0 = st[0], L = [`WAYLAND FORGE - LASER PACK`, `Every file is the same page: ${f2(s0.W)} x ${f2(s0.H)} mm, offset 0,0. Run the steps in number order, ONE FILE AT A TIME.`,
+    `Unzip first (right-click > Extract All). Do NOT use "Reload Last File" between steps - LaserGRBL reuses the last size, offset and power.`,
+    `LaserGRBL remembers the last values you typed in the "Target image" window. Check W, H, Offset and S-MAX every time.`, ``];
+  st.forEach(s => L.push(lzStepText(s)));
+  L.push(`CHECKING IN LASERGRBL`, `After Create! the job shows in the preview with rulers in mm and the bounding box. It should span 0..${f2(s0.W)} x 0..${f2(s0.H)} (the cuts sit inside that).`,
+    `Use the Frame button to trace the outline on the material before running.`, `Test on scrap first: a photo on 1-4 mm wood needs very little power.`,
+    marks ? `Corner marks are ON: tiny 0.4 mm squares at each page corner in every file.` : ``, `Cut lines are 0.1 mm hairlines; no kerf offset. Power, speed and passes are not in the files - you type them per step.`);
   return L.join('\r\n') + '\r\n';
 }
+function lzStepsUI(st) {
+  const box = $('lzSteps'); if (!box) return;
+  box.innerHTML = '<b>Laser steps</b> <span class="dim">— run in order, one file at a time</span>' + st.map((s, i) => {
+    const url = URL.createObjectURL(new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' })); s.url = url;
+    return `<div class="lzstep"><img src="${url}" alt="Step ${s.n} preview"><div><b>${s.n}. ${esc(s.kind)} ${esc(s.what)}</b>
+      <div>${f2(s.W)} × ${f2(s.H)} mm · offset 0,0${s.px ? ` · ${s.px[0]}×${s.px[1]} px @ ${s.dpi} DPI` : ''}</div>
+      <div class="dim">${esc(s.mode)}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
+      <label class="dim">Your settings <input data-lzset="${i}" placeholder="speed / power / passes"></label>
+      <button data-lzdl="${i}">⬇ Download step ${s.n} only</button></div></div>`; }).join('');
+  box.hidden = false;
+}
+$('lzSteps') && $('lzSteps').addEventListener('click', e => { const i = e.target.dataset.lzdl; if (i == null || !lzLast) return; const s = lzLast[+i];
+  download(new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' }), s.file); });
 function laserKeyOfSel() { return sel.img ? 'img' : sel.orn ? 'orn' : sel.letters.length ? 't:' + sel.letters[0].l : null; }
 function laserUI() {
   const box = $('laserList'); if (!box || box.contains(document.activeElement)) return;
