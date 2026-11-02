@@ -521,11 +521,29 @@ function fixSel() {
   if (!curLayer() || shapeOf(curLayer()) !== curShape()) { const f = S.layers.find(l => shapeOf(l) === curShape()); sel.layer = f ? f.id : null; } if (!curOrn()) sel.orn = null; if (!S.image) sel.img = false; sel.letters = sel.letters.filter(s => { const L = S.layers.find(x => x.id === s.l); return L && s.i < L.text.length; }); }
 // ---- projects: autosave "last session" + named projects kept in this browser ----
 const PROJS = 'wayland-forge-projects-v1', META = 'wayland-forge-session-v1';
+// ---- storage: IndexedDB (large quota) with an in-memory copy so reads stay instant ----
+const KEYS = [STORE, META, PROJS], mem = {}; let idb = null, kvWarned = 0;
+const idbReq = q => new Promise((ok, no) => { q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); });
+async function kvLoad() {
+  try { const q = indexedDB.open('wayland-forge', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv');
+    idb = await idbReq(q);
+    for (const k of KEYS) { const v = await idbReq(idb.transaction('kv').objectStore('kv').get(k)); if (v != null) mem[k] = v; }
+    let moved = false; for (const k of KEYS) { const v = localStorage.getItem(k); if (v != null && mem[k] == null) { mem[k] = v; await kvPut(k, v); moved = true; } }
+    if (moved) for (const k of KEYS) if (mem[k] != null && localStorage.getItem(k) != null) { const t = await idbReq(idb.transaction('kv').objectStore('kv').get(k)); if (t === mem[k]) localStorage.removeItem(k); }
+  } catch (e) { console.warn('IndexedDB unavailable, using localStorage', e); idb = null; for (const k of KEYS) { const v = localStorage.getItem(k); if (v != null) mem[k] = v; } }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* */ }
+}
+function kvPut(k, v) { if (!idb) { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); return Promise.resolve(); }
+  return new Promise((ok, no) => { const t = idb.transaction('kv', 'readwrite'); v == null ? t.objectStore('kv').delete(k) : t.objectStore('kv').put(v, k); t.oncomplete = ok; t.onerror = t.onabort = () => no(t.error); }); }
+const kvGet = k => mem[k] == null ? null : mem[k];
+function kvSet(k, v) { mem[k] = v; kvPut(k, v).catch(e => { console.warn(e); if (Date.now() - kvWarned > 20000) { kvWarned = Date.now(); alert('This device has run out of storage for Wayland Forge projects (' + mb(v.length) + ' needed). Your design is still open - use Download file in the Projects section to keep a copy, or delete old projects.'); } }); return true; }
+function kvDel(k) { delete mem[k]; kvPut(k, null).catch(() => {}); }
+const mb = n => (n / 1048576 < 0.1 ? '<0.1' : (n / 1048576).toFixed(1)) + ' MB';
 let homeOpen = true, projId = null;
-const readProjs = () => { try { const a = JSON.parse(localStorage.getItem(PROJS) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
-const writeProjs = a => { try { localStorage.setItem(PROJS, JSON.stringify(a)); return true; } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
-function saveNow() { nameBtnUI(); if (homeOpen) return; try { localStorage.setItem(STORE, JSON.stringify(S)); localStorage.setItem(META, JSON.stringify({ projId, t: Date.now() })); } catch (e) { /* storage full (large image) */ }
-  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.state = S; x.updated = Date.now(); try { localStorage.setItem(PROJS, JSON.stringify(a)); } catch (e) { /* full */ } } } }
+const readProjs = () => { try { const a = JSON.parse(kvGet(PROJS) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+const writeProjs = a => { try { return kvSet(PROJS, JSON.stringify(a)); } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
+function saveNow() { nameBtnUI(); if (homeOpen) return; try { kvSet(STORE, JSON.stringify(S)); kvSet(META, JSON.stringify({ projId, t: Date.now() })); } catch (e) { /* storage full (large image) */ }
+  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.state = S; x.updated = Date.now(); writeProjs(a); } } }
 let saveT; function persist() { if (homeOpen) return; clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
 
 // ---------- control bindings ----------
@@ -561,9 +579,9 @@ act('delImg', () => { S.image = null; });
 act('addSwatch', () => { const c = $('swatchPick').value; if (!S.swatches.includes(c)) S.swatches.push(c); });
 act('newProj', () => { if (confirm('Start a new design? (Your current one stays in Projects.)')) { archiveSession(); openState(defaults(), null); } });
 function archiveSession() { // keep an unnamed last session so starting fresh never loses work
-  try { const m = JSON.parse(localStorage.getItem(META) || '{}'), raw = localStorage.getItem(STORE); if (!raw || m.projId) return;
+  try { const m = JSON.parse(kvGet(META) || '{}'), raw = kvGet(STORE); if (!raw || m.projId) return;
     const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
-    const a = readProjs(); a.unshift({ id: uid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); localStorage.setItem(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
+    const a = readProjs(); a.unshift({ id: uid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
 function openState(st, id, keepLast) { if (!keepLast) archiveSession(); S = sanitize(st); projId = id; sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false }; fixSel(); hist.stack = []; hist.i = -1; closeHome(); update(); commit(); fitView(); saveNow(); }
 const slug = t => (String(t || '').normalize('NFKD').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('') || '').slice(0, 20);
 function designName() { return projName() || S.name || ''; }
@@ -584,15 +602,16 @@ function showHome(view) { saveNow(); homeOpen = true; document.body.classList.ad
 function closeHome() { homeOpen = false; nameBtnUI(); document.body.classList.remove('home'); $('home').hidden = true; }
 function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; if (v === 'projs') listProjs(); }
 const ago = t => { if (!t) return ''; const d = new Date(t); return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
-function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(localStorage.getItem(META) || '{}'); } catch (e) { /* */ }
-  const last = !m.projId && !m.archived && localStorage.getItem(STORE);
+function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(kvGet(META) || '{}'); } catch (e) { /* */ }
+  const last = !m.projId && !m.archived && kvGet(STORE);
   const row = (id, name, t, extra) => `<li data-pid="${id}"><button class="po grow" data-pa="open"><b>${esc(name)}</b><span class="dim">${extra || ''}${ago(t)}</span></button>${id === 'last' ? '' : '<button data-pa="ren" title="Rename" aria-label="Rename">✎</button>'}<button data-pa="del" class="danger" title="Delete" aria-label="Delete">✕</button></li>`;
-  const html = (last ? row('last', 'Last session', m.t, 'Not saved by name · ') : '') + a.map(x => row(x.id, x.name, x.updated)).join('');
+  const sz = x => JSON.stringify(x).length, tot = a.reduce((t, x) => t + sz(x.state), 0) + (last ? last.length : 0);
+  const html = (last ? row('last', 'Last session', m.t, 'Not saved by name · ' + mb(last.length) + ' · ') : '') + a.map(x => row(x.id, x.name, x.updated, mb(sz(x.state)) + ' · ')).join('') + (a.length || last ? `<li class="hint">Total used: ${mb(tot)}${idb ? '' : ' (old storage, about 5 MB limit)'}</li>` : '');
   $('projList').innerHTML = html || '<li class="hint">No saved projects yet. Start a New design and tap <b>Save to Projects</b>.</li>'; }
 $('projList').addEventListener('click', e => { const b = e.target.closest('[data-pa]'); if (!b) return; const id = b.closest('li').dataset.pid, a = readProjs(), x = a.find(q => q.id === id);
-  if (b.dataset.pa === 'open') { if (id === 'last') { try { openState(JSON.parse(localStorage.getItem(STORE)), null, true); } catch (er) { alert('Could not open the last session.'); } } else if (x) openState(x.state, x.id); }
+  if (b.dataset.pa === 'open') { if (id === 'last') { try { openState(JSON.parse(kvGet(STORE)), null, true); } catch (er) { alert('Could not open the last session.'); } } else if (x) openState(x.state, x.id); }
   else if (b.dataset.pa === 'ren' && x) { const n = prompt('Rename project:', x.name); if (n) { x.name = n.trim().slice(0, 60); writeProjs(a); listProjs(); } }
-  else if (b.dataset.pa === 'del') { if (!confirm('Delete "' + (x ? x.name : 'Last session') + '"? This cannot be undone.')) return; if (id === 'last') { localStorage.removeItem(STORE); localStorage.removeItem(META); } else { writeProjs(a.filter(q => q.id !== id)); if (projId === id) projId = null; } listProjs(); } });
+  else if (b.dataset.pa === 'del') { if (!confirm('Delete "' + (x ? x.name : 'Last session') + '"? This cannot be undone.')) return; if (id === 'last') { kvDel(STORE); kvDel(META); } else { writeProjs(a.filter(q => q.id !== id)); if (projId === id) projId = null; } listProjs(); } });
 $('homeNew').onclick = () => { archiveSession(); openState(defaults(), null); window.dispatchEvent(new Event('wf-newdesign')); };
 $('homeProjects').onclick = () => homeView('projs');
 $('homeBack').onclick = () => homeView('main');
@@ -626,12 +645,20 @@ $('imgFile').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   const r = new FileReader();
   r.onload = () => {
-    const src = r.result, el = new Image();
-    el.onload = () => { imgEls.set(src, el); S.image = Object.assign(imgDefaults(), { src, x: C, y: C, size: 200, clip: true }); Object.assign(S.image, fitInside(S.image)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
+    const el = new Image(); let src = r.result;
+    el.onload = () => { if (!el.dataset.shrunk) { const out = shrinkImg(el, file); if (out) { el.dataset.shrunk = 1; src = out; el.src = out; return; } } imgEls.set(src, el); S.image = Object.assign(imgDefaults(), { src, x: C, y: C, size: 200, clip: true }); Object.assign(S.image, fitInside(S.image)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
     el.onerror = () => alert('Could not read that image.'); el.src = src;
   };
   r.readAsDataURL(file); e.target.value = '';
 });
+function shrinkImg(el, file) { // keep imported pictures to a sensible size: 2400 px long side (300 dpi at ~200 mm)
+  const M = 2400, w = el.naturalWidth, h = el.naturalHeight, k = Math.min(1, M / Math.max(w, h)), W = Math.max(1, Math.round(w * k)), H = Math.max(1, Math.round(h * k));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const cx = cv.getContext('2d'); cx.drawImage(el, 0, 0, W, H);
+  let alpha = false; try { const d = cx.getImageData(0, 0, W, H).data; for (let i = 3; i < d.length; i += 4 * 7) if (d[i] < 250) { alpha = true; break; } } catch (e) { return null; }
+  const out = alpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92);
+  el.dataset.shrunk = 1; return out.length < el.src.length || k < 1 ? out : null;
+}
+
 $('undoBtn').onclick = () => { if (hist.i > 0) restore(hist.stack[--hist.i]); };
 $('redoBtn').onclick = () => { if (hist.i < hist.stack.length - 1) restore(hist.stack[++hist.i]); };
 $('fitBtn').onclick = () => fitView();
@@ -1027,6 +1054,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEve
 // ---------- boot ----------
 window.WF = { showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
 (async () => {
+  await kvLoad();
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
   // start on the home screen; projects open only from Projects
   $('loading').remove(); update(); commit();
