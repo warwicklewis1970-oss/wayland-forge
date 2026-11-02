@@ -253,7 +253,7 @@ function starD(r) {
 
 
 // ---------- centre image: silhouette + vector trace ----------
-function imgDefaults() { return { mode: 'orig', removeBg: false, tol: 60, bgMode: 'light', threshold: 128, smooth: 2, invert: false, color: '#1a1410' }; }
+function imgDefaults() { return { mode: 'orig', removeBg: false, tol: 60, flood: true, whiteLvl: 255, bgMode: 'light', threshold: 128, smooth: 2, invert: false, color: '#1a1410' }; }
 const imgEls = new Map(), procCache = new Map();
 function srcKey(s) { let h = 0; for (let i = 0; i < s.length; i += 97) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h; }
 function loadedImg(src) {
@@ -282,15 +282,22 @@ function inkMask(g, im) { // 1 = ink, 0 = background
   return m;
 }
 function procImage(im) {
-  if (im.mode === 'orig' && !im.removeBg) return null;
-  const key = im.mode === 'orig' ? ['o', im.tol] : im.mode === 'sil' ? ['s', im.bgMode, im.threshold, im.smooth, im.invert, im.color] : ['t', im.bgMode, im.threshold, im.smooth, im.invert];
+  if (im.mode === 'orig' && !im.removeBg && !(im.whiteLvl < 255)) return null;
+  const key = im.mode === 'orig' ? ['o', im.removeBg, im.tol, im.flood, im.whiteLvl] : im.mode === 'sil' ? ['s', im.bgMode, im.threshold, im.smooth, im.invert, im.color] : ['t', im.bgMode, im.threshold, im.smooth, im.invert];
   const ck = srcKey(im.src) + '|' + key.join('|'); if (procCache.has(ck)) return procCache.get(ck);
   const el = loadedImg(im.src); if (!el) return null;
   let res;
   try {
     if (im.mode === 'orig') { // colour-preserving background removal: corners give the background colour
       const g = grab(el, 1600), d = g.id.data, W = g.w, H = g.h, cs = [0, W - 1, (H - 1) * W, H * W - 1].map(i => i * 4), bg = [0, 1, 2].map(c => cs.reduce((a, p) => a + d[p + c], 0) / 4);
-      for (let p = 0; p < d.length; p += 4) { const dist = Math.hypot(d[p] - bg[0], d[p + 1] - bg[1], d[p + 2] - bg[2]); if (dist < im.tol) d[p + 3] = 0; else if (dist < im.tol * 1.3) d[p + 3] = Math.round(d[p + 3] * (dist - im.tol) / (im.tol * 0.3)); }
+      const dst = p => Math.hypot(d[p] - bg[0], d[p + 1] - bg[1], d[p + 2] - bg[2]), wl = im.whiteLvl < 255 ? im.whiteLvl : 999;
+      if (im.removeBg && im.flood !== false) { // flood-fill from the edges: only background touching the border goes, light parts inside the subject stay
+        const seen = new Uint8Array(W * H), q = []; for (let x = 0; x < W; x++) q.push(x, (H - 1) * W + x); for (let y = 0; y < H; y++) q.push(y * W, y * W + W - 1);
+        while (q.length) { const i = q.pop(); if (seen[i]) continue; seen[i] = 1; const p = i * 4, dist = dst(p); if (dist >= im.tol * 1.3) continue;
+          d[p + 3] = dist < im.tol ? 0 : Math.round(d[p + 3] * (dist - im.tol) / (im.tol * 0.3)); if (dist >= im.tol) continue; const x = i % W;
+          if (x > 0) q.push(i - 1); if (x < W - 1) q.push(i + 1); if (i >= W) q.push(i - W); if (i < W * (H - 1)) q.push(i + W); } }
+      else if (im.removeBg) for (let p = 0; p < d.length; p += 4) { const dist = dst(p); if (dist < im.tol) d[p + 3] = 0; else if (dist < im.tol * 1.3) d[p + 3] = Math.round(d[p + 3] * (dist - im.tol) / (im.tol * 0.3)); }
+      if (wl < 999) for (let p = 0; p < d.length; p += 4) if (0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2] >= wl) d[p + 3] = 0; // "background to white": light greys become blank (white on the laser)
       g.cx.putImageData(g.id, 0, 0); res = { url: g.cv.toDataURL('image/png') };
     } else if (im.mode === 'sil') {
       const g = grab(el, 1200), m = inkMask(g, im), d = g.id.data, c = hexRgb(im.color);
@@ -679,7 +686,10 @@ document.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; 
 // ---------- pointer: select, drag, pan, zoom ----------
 function svgPt(e) { const p = stage.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(stage.getScreenCTM().inverse()); }
 let drag = null, spaceDown = false;
-function nudge(x, y, step) { for (const o of selObjs()) { o.dx = f2(o.dx + x * step); o.dy = f2(o.dy + y * step); } update(); commit(); }
+function nudge(x, y, step) { // x,y are screen directions: map them into the letter's layer (undo layer turn and scale)
+  const L = S.layers.find(q => sel.letters[0] && q.id === sel.letters[0].l), sh = L ? shapeOf(L) : null; let ux = x * step, uy = y * step;
+  if (sh) { const a = -(sh.rot || 0) * Math.PI / 180, k = sh.scale || 1; [ux, uy] = [(ux * Math.cos(a) - uy * Math.sin(a)) / k, (ux * Math.sin(a) + uy * Math.cos(a)) / k]; }
+  for (const o of selObjs()) { o.dx = f2(o.dx + ux); o.dy = f2(o.dy + uy); } update(); commit(); }
 document.querySelectorAll('[data-nudge]').forEach(b => b.addEventListener('click', () => { const [x, y] = b.dataset.nudge.split(',').map(Number); nudge(x, y, 2); }));
 document.querySelectorAll('[data-rel]').forEach(el => {
   el.addEventListener('input', () => { // relative: every selected letter changes by the same delta / ratio
@@ -876,7 +886,7 @@ function laserItems() {
     if (b.fillOn) it.push({ key: pre + 'fill', part: 'fill', sh, name: nm + 'Shape fill', def: 'off' });
     for (const L of S.layers) if (L.text && shapeOf(L) === sh) it.push({ key: 't:' + L.id, sh, name: nm + 'Text: ' + L.text, def: 'etch' }); });
   if (S.ornaments.length) it.push({ key: 'orn', name: 'Ornaments', def: 'etch' });
-  if (S.image) it.push({ key: 'img', name: 'Centre image' + (S.image.mode === 'trace' ? ' (trace)' : S.image.mode === 'sil' ? ' (silhouette)' : ''), def: S.image.mode === 'trace' ? 'etch' : 'image' });
+  if (S.image) it.push({ key: 'img', name: 'Centre image' + (S.image.mode === 'trace' ? ' (trace)' : S.image.mode === 'sil' ? ' (silhouette)' : ''), def: S.image.mode === 'orig' ? 'image' : 'etch' });
   return it;
 }
 const roleOf = it => S.laser[it.key] || it.def;
@@ -951,7 +961,10 @@ function pngDpi(u, dpi) { // insert a pHYs chunk (pixels per metre) right after 
   const o = new Uint8Array(u.length + 21); o.set(u.subarray(0, 33)); o.set(c, 33); o.set(u.subarray(33), 54); return o;
 }
 // Build the list of steps (one file each). Every file is the same W x H mm page, origin = bottom-left corner.
-async function laserSteps() {
+async function imgReady() { const im = S.image; if (!im) return; const need = !(im.mode === 'orig' && !im.removeBg && !(im.whiteLvl < 255));
+  for (let i = 0; i < 100; i++) { const el = loadedImg(im.src); if (el && (!need || procImage(im))) return; await new Promise(r => setTimeout(r, 100)); }
+  throw new Error('The centre picture is still loading - try again in a moment.'); }
+async function laserSteps() { await imgReady();
   const W = +$('lzW').value, H = +$('lzH').value, dpi = +$('lzDpi').value || 254, marks = $('lzMarks').checked;
   if (!(W >= 5 && H >= 5)) throw new Error('Enter the size in mm.');
   const B = fileBase();

@@ -137,6 +137,9 @@
         <label><span>Style</span><select data-b="img.mode"><option value="orig">Original picture</option><option value="sil">Silhouette (solid cutout)</option><option value="trace">Vector trace (SVG paths)</option></select></label>
         <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.removeBg">Remove background (corner colour)</label>
         <label class="rg" data-imgmodes="orig"><span>Tolerance</span><input type="range" min="5" max="200" step="1" data-b="img.tol"><output></output></label>
+        <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.flood">Only background touching the edges (keeps light parts of the subject)</label>
+        <label class="rg" data-imgmodes="orig"><span>Background to white</span><input type="range" min="150" max="255" step="1" data-b="img.whiteLvl"><output></output></label>
+        <div class="hint" data-imgmodes="orig">For laser photos: slide "Background to white" left until the grey background disappears (255 = off). Anything this light or lighter is not burnt.</div>
         <div class="g2" data-imgmodes="sil trace">
           <label><span>Background</span><select data-b="img.bgMode"><option value="light">Light</option><option value="dark">Dark</option></select></label>
           <label><span>Fill</span><input type="color" data-b="img.color" class="col"></label>
