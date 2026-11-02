@@ -506,7 +506,7 @@ function commit() {
 function restore(snap) { S = JSON.parse(snap); geoCache.key = ''; fixSel(); update(); }
 function sanitize(raw) {
   const d = defaults(), o = raw || {};
-  const st = { bg: o.bg === 'color' ? 'color' : 'transparent', bgColor: o.bgColor || d.bgColor,
+  const st = { name: typeof o.name === 'string' ? o.name.slice(0, 60) : '', bg: o.bg === 'color' ? 'color' : 'transparent', bgColor: o.bgColor || d.bgColor,
     shapes: Array.isArray(o.shapes) && o.shapes.length ? o.shapes.map((x, i) => Object.assign(newShape('Layer ' + (i + 1)), x, { base: Object.assign(baseDefaults(), x.base || {}) })) : [newShape('Layer 1', o.base)], swatches: Array.isArray(o.swatches) ? o.swatches : d.swatches,
     layers: Array.isArray(o.layers) ? o.layers.map(l => Object.assign(newLayer('', 'top'), l)) : d.layers,
     ornaments: linkMirrors(Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)) : d.ornaments),
@@ -524,7 +524,7 @@ const PROJS = 'wayland-forge-projects-v1', META = 'wayland-forge-session-v1';
 let homeOpen = true, projId = null;
 const readProjs = () => { try { const a = JSON.parse(localStorage.getItem(PROJS) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
 const writeProjs = a => { try { localStorage.setItem(PROJS, JSON.stringify(a)); return true; } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
-function saveNow() { if (homeOpen) return; try { localStorage.setItem(STORE, JSON.stringify(S)); localStorage.setItem(META, JSON.stringify({ projId, t: Date.now() })); } catch (e) { /* storage full (large image) */ }
+function saveNow() { nameBtnUI(); if (homeOpen) return; try { localStorage.setItem(STORE, JSON.stringify(S)); localStorage.setItem(META, JSON.stringify({ projId, t: Date.now() })); } catch (e) { /* storage full (large image) */ }
   if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.state = S; x.updated = Date.now(); try { localStorage.setItem(PROJS, JSON.stringify(a)); } catch (e) { /* full */ } } } }
 let saveT; function persist() { if (homeOpen) return; clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
 
@@ -565,12 +565,23 @@ function archiveSession() { // keep an unnamed last session so starting fresh ne
     const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
     const a = readProjs(); a.unshift({ id: uid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); localStorage.setItem(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
 function openState(st, id, keepLast) { if (!keepLast) archiveSession(); S = sanitize(st); projId = id; sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false }; fixSel(); hist.stack = []; hist.i = -1; closeHome(); update(); commit(); fitView(); saveNow(); }
+const slug = t => (String(t || '').normalize('NFKD').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('') || '').slice(0, 20);
+function designName() { return projName() || S.name || ''; }
+function nameBtnUI() { const b = $('nameBtn'); if (b) { const n = designName(); b.textContent = (n || 'Untitled') + ' ✎'; b.title = 'Design name (used for file names). Tap to rename.'; } }
+function setDesignName(n) { n = String(n || '').trim().slice(0, 60); if (!n) return false;
+  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.name = n; x.updated = Date.now(); writeProjs(a); } }
+  else { const a = readProjs(), id = uid(); a.unshift({ id, name: n, updated: Date.now(), state: S }); if (writeProjs(a)) projId = id; }
+  S.name = n; saveNow(); return true; }
+function fileBase() { let n = designName();
+  if (!n) { const top = slug(S.layers[0] && S.layers[0].text) || 'MyBadge'; const a = prompt('Name this design (used for file names):', top); if (a == null) throw new Error('Export cancelled - no design name.'); setDesignName(slug(a) || top); n = designName(); }
+  return slug(n) || 'MyBadge'; }
 function projName() { const x = projId && readProjs().find(q => q.id === projId); return x ? x.name : null; }
+$('nameBtn') && $('nameBtn').addEventListener('click', () => { const n = prompt('Design name (used for file names):', designName() || slug(S.layers[0] && S.layers[0].text) || 'MyBadge'); if (n != null && setDesignName(n)) toast('Name: ' + designName()); });
 act('saveToProjects', () => { const n = projName(); if (n) { saveNow(); toast('Saved to Projects: ' + n); return; }
   const name = prompt('Name this project:', (S.layers[0] && S.layers[0].text) || 'My badge'); if (!name) return; const a = readProjs(), id = uid(); a.unshift({ id, name: name.trim().slice(0, 60), updated: Date.now(), state: S }); if (writeProjs(a)) { projId = id; saveNow(); toast('Saved to Projects: ' + name); } });
 // ---- home / start screen ----
 function showHome(view) { saveNow(); homeOpen = true; document.body.classList.add('home'); $('home').hidden = false; homeView(view || 'main'); }
-function closeHome() { homeOpen = false; document.body.classList.remove('home'); $('home').hidden = true; }
+function closeHome() { homeOpen = false; nameBtnUI(); document.body.classList.remove('home'); $('home').hidden = true; }
 function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; if (v === 'projs') listProjs(); }
 const ago = t => { if (!t) return ''; const d = new Date(t); return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
 function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(localStorage.getItem(META) || '{}'); } catch (e) { /* */ }
@@ -738,7 +749,7 @@ stage.addEventListener('wheel', e => {
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 async function doExport() {
   const fmt = $('exFmt').value, unit = $('exUnit').value, W = +$('exW').value, H = +$('exH').value, bleed = +$('exBleed').value || 0, dpi = +$('exDpi').value || 300;
-  const name = 'wayland-forge-' + new Date().toISOString().slice(0, 10);
+  const name = fileBase() + ' print';
   if (!(W > 0 && H > 0)) throw new Error('Enter a width and height.');
   if (fmt === 'svg') { download(new Blob([exportSVG(W, H, unit, bleed)], { type: 'image/svg+xml' }), name + '.svg'); return `SVG ${W}×${H}${unit}${bleed ? ' + ' + bleed + unit + ' bleed' : ''}`; }
   if (fmt === 'pdf') {
@@ -758,13 +769,13 @@ async function doExport() {
   await new Promise((ok, bad) => { img.onload = ok; img.onerror = () => bad(new Error('Could not rasterise artwork.')); img.src = url; });
   const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; cv.getContext('2d').drawImage(img, 0, 0, pw, ph); URL.revokeObjectURL(url);
   const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
-  download(blob, name + '.png'); return `PNG ${pw}×${ph}px${pf ? ' (Printify)' : ` @ ${dpi} DPI`}`;
+  download(blob, (pf ? name.replace(/ print$/, ' printify') : name) + '.png'); return `PNG ${pw}×${ph}px${pf ? ' (Printify)' : ` @ ${dpi} DPI`}`;
 }
 $('exportBtn').addEventListener('click', async () => {
   $('exInfo').textContent = 'Exporting…';
   try { $('exInfo').textContent = 'Saved: ' + await doExport(); } catch (err) { console.warn(err); $('exInfo').textContent = 'Export failed: ' + err.message; }
 });
-$('saveProj').onclick = () => download(new Blob([JSON.stringify({ app: 'wayland-forge', version: 1, state: S }, null, 1)], { type: 'application/json' }), 'wayland-forge-project.json');
+$('saveProj').onclick = () => download(new Blob([JSON.stringify({ app: 'wayland-forge', version: 1, state: S }, null, 1)], { type: 'application/json' }), (designName() ? fileBase() : 'MyBadge') + ' project.json');
 $('loadProj').addEventListener('change', async e => {
   const file = e.target.files[0]; if (!file) return; e.target.value = '';
   try { const j = JSON.parse(await file.text()); if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project'); if (homeOpen) { archiveSession(); openState(j.state, null); } else { S = sanitize(j.state); fixSel(); update(); commit(); } }
@@ -916,6 +927,7 @@ function pngDpi(u, dpi) { // insert a pHYs chunk (pixels per metre) right after 
 async function laserSteps() {
   const W = +$('lzW').value, H = +$('lzH').value, dpi = +$('lzDpi').value || 254, marks = $('lzMarks').checked;
   if (!(W >= 5 && H >= 5)) throw new Error('Enter the size in mm.');
+  const B = fileBase();
   const P = lzPage(W, H), hair = f2(0.1 * P.k), items = laserItems(), by = r => items.filter(it => roleOf(it) === r);
   const imgItems = by('image'), etch = by('etch'), cin = by('cutin'), cout = by('cutout');
   if (!imgItems.length && !etch.length && !cin.length && !cout.length) throw new Error('Every part is set to Skip.');
@@ -932,7 +944,7 @@ async function laserSteps() {
   if (cin.length) cut(cin, 'cutin', 'inside', 'Cutting power. Run passes until it goes through.');
   if (cout.length) cut(cout, 'cutout', 'outside', 'Always LAST - the piece is free after this.');
   st.forEach((s, i) => { s.n = i + 1; s.W = W; s.H = H; s.dpi = dpi; s.px = s.type === 'png' ? [Math.round(W / 25.4 * dpi), Math.round(H / 25.4 * dpi)] : null;
-    s.short = s.kind === 'ENGRAVE' ? 'photo' : s.kind === 'ETCH' ? 'etch' : 'cut ' + s.what; s.file = `Wayland Forge ${String(s.n).padStart(2, '0')} ${s.short}.${s.type}`; });
+    s.short = s.kind === 'ENGRAVE' ? 'photo' : s.kind === 'ETCH' ? 'etch' : 'cut ' + s.what; s.file = `${B} ${s.n} ${s.short}.${s.type}`; });
   return st;
 }
 let lzLast = null;
@@ -941,8 +953,8 @@ async function laserPack(asZip) {
   const st = await laserSteps(), files = [];
   for (const s of st) { s.bytes = await s.data(); files.push({ name: s.file, data: s.bytes }); }
   lzLast = st; lzStepsUI(st);
-  if (asZip) { files.push({ name: 'Wayland Forge 00 read me.txt', data: lzReadme(st, $('lzMarks').checked) }); const blob = makeZip(files);
-    download(blob, 'Wayland Forge laser.zip'); return `Wayland Forge laser.zip (${st.length} steps) is in your Downloads folder. Right-click it > Extract All > Extract before opening in LaserGRBL.`; }
+  if (asZip) { files.push({ name: `${st[0].file.replace(/ 1 .*$/, '')} 0 read me.txt`, data: lzReadme(st, $('lzMarks').checked) }); const blob = makeZip(files);
+    const zn = st[0].file.replace(/ 1 .*$/, '') + ' laser.zip'; download(blob, zn); return `${zn} (${st.length} steps) is in your Downloads folder. Right-click it > Extract All > Extract before opening in LaserGRBL.`; }
   for (const s of st) { download(lzBlob(s), s.file); await new Promise(r => setTimeout(r, 900)); }
   return `${st.length} files saved to your Downloads folder: ${st.map(s => s.file).join(' · ')}. If the browser asks to allow multiple downloads, tap Allow.`;
 }
