@@ -85,6 +85,7 @@
         <div class="g2">
           <label><span>Font</span><select data-b="layer.font" id="fontSel"></select></label>
           <label><span>Colour</span><input type="color" data-b="layer.color" class="col"></label>
+          <label><span>Letters</span><select data-b="layer.style"><option value="fill">Fill (solid)</option><option value="hollow">Hollow (outline)</option></select></label>
           <label><span>Side</span><select data-b="layer.side"><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
           <label><span>Sits</span><select data-b="layer.ring"><option value="between">Between lines</option><option value="outer">Outside outer</option><option value="inner">Inside inner</option></select></label>
         </div>
@@ -182,7 +183,7 @@
       <div class="g3">
         <label><span>W mm</span><input type="number" id="lzW" value="100" min="5" max="800" step="0.5"></label>
         <label><span>H mm</span><input type="number" id="lzH" value="100" min="5" max="800" step="0.5"></label>
-        <label><span>Detail</span><select id="lzDpi"><option value="127">5 lines/mm</option><option value="254" selected>10 lines/mm</option><option value="318">12.5 lines/mm</option></select></label>
+        <label><span>Detail</span><select id="lzDpi"><option value="127">5 lines/mm</option><option value="254">10 lines/mm</option><option value="318" selected>12.5 lines/mm</option><option value="400">16 lines/mm</option></select></label>
       </div>
       <label class="chk"><input type="checkbox" id="lzMarks">Tiny corner marks in every file <span class="dim">(only if LaserGRBL moves files)</span></label>
       <button id="laserBtn" class="accent wide">⬇ Download all steps (separate files)</button>

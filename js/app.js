@@ -18,7 +18,7 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 // ---------- state ----------
-const newLayer = (text, side) => ({ id: uid(), text, font: 'Cinzel', size: 70, color: '#1b1b1b', side, ring: 'between', offset: 0, spacing: 4, lift: 0, letters: {} });
+const newLayer = (text, side) => ({ id: uid(), text, font: 'Cinzel', size: 70, color: '#1b1b1b', side, ring: 'between', offset: 0, spacing: 4, lift: 0, style: 'fill', letters: {} });
 const baseDefaults = () => ({ shape: 'circle', rx: 400, ry: 400, sides: 6, points: 5, innerRatio: 0.55, dip: 0.45, corner: 14, smooth: 80, gap: 120, width: 8, stroke: '#1b1b1b', outer: true, inner: true, fillOn: false, fill: '#f4ede0' });
 const newShape = (name, base) => ({ id: uid(), name, visible: true, x: 0, y: 0, scale: 1, rot: 0, base: Object.assign(baseDefaults(), base || {}) });
 const defaults = () => { const d = defaults0(); d.layers.forEach(l => { l.shape = d.shapes[0].id; }); return d; };
@@ -401,7 +401,7 @@ function textEl(L, editor) {
       const hit = bb ? `<rect data-hit="1"${at} x="${f2(bb.x1 - pd)}" y="${f2(bb.y1 - pd)}" width="${f2(bb.x2 - bb.x1 + 2 * pd)}" height="${f2(bb.y2 - bb.y1 + 2 * pd)}" pointer-events="all" ${hi ? 'fill="#e0a043" fill-opacity="0.18" stroke="#e0a043" stroke-width="1.5" stroke-dasharray="4 3"' : 'fill="none"'}/>` : '';
       return `<g transform="${q.tr}"><path d="${q.d}"${at}${hi ? ' stroke="#e0a043" stroke-width="3"' : ''}/>${hit}</g>`;
     }).join('');
-    return `<g fill="${L.color}">${g}</g>`;
+    return L.style === 'hollow' ? `<g fill="none" stroke="${L.color}" stroke-width="2.5" stroke-linejoin="round">${g}</g>` : `<g fill="${L.color}">${g}</g>`;
   }
 }
 // Full export SVG at a physical page size; artwork (square) fitted centred, bleed added around.
@@ -908,7 +908,7 @@ function laserPart0(it, kind) {
   }
   if (k === 'fill') return `<path d="${ringD(0)}"${kind === 'pic' ? ` fill="${b.fill}"` : ''}/>`;
   if (k === 'orn') return S.ornaments.map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' ? ` fill="${o.color}"` : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
-  if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? ` fill="${L.color}"` : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
+  if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? (L.style === 'hollow' ? ` fill="none" stroke="${L.color}" stroke-width="2.5"` : ` fill="${L.color}"`) : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
   if (k === 'img' && S.image) {
     const im = S.image, pr = procImage(im), vec = pr && pr.paths;
     if (cut && (im.clip || !vec)) return im.clip ? innerClipEl(shTr(imgShape())) : `<path d="${imgBox(im)}"/>`;
@@ -923,18 +923,39 @@ function laserPart0(it, kind) {
 function lzPage(W, H) { const s = Math.min(W, H), k = ART / s, vw = W * k, vh = H * k; return { k, vx: C - vw / 2, vy: C - vh / 2, vw, vh }; }
 function lzMarks(P, style) { const m = 0.4 * P.k, xs = [P.vx, P.vx + P.vw - m], ys = [P.vy, P.vy + P.vh - m];
   return xs.flatMap(x => ys.map(y => `<path d="M${f2(x)} ${f2(y)}h${f2(m)}v${f2(m)}h${f2(-m)}Z"${style}/>`)).join(''); }
+// Flatten markup (artwork units, any transforms) into plain absolute polylines in mm: LaserGRBL's SVG reader mis-handles nested/combined transforms.
+function lzFlat(W, H, body) { const P = lzPage(W, H), NS = 'http://www.w3.org/2000/svg', host = document.createElementNS(NS, 'svg');
+  host.setAttribute('viewBox', `${P.vx} ${P.vy} ${P.vw} ${P.vh}`); host.setAttribute('width', '1000'); host.setAttribute('height', '1000');
+  host.style.cssText = 'position:fixed;left:-99999px;top:0;visibility:hidden'; host.innerHTML = body; document.body.appendChild(host);
+  const out = [], step = 0.08 * P.k, tol = 0.01 * P.k, R = n => +n.toFixed(3);
+  try { const inv = host.getScreenCTM().inverse();
+    for (const el of host.querySelectorAll('path,circle,ellipse,rect,polygon,polyline,line')) { if (el.closest('defs,clipPath')) continue;
+      const len = el.getTotalLength(); if (!(len > 0)) continue; const m = inv.multiply(el.getScreenCTM()), pt = host.createSVGPoint();
+      const n = Math.max(8, Math.ceil(len / step)), ds = len / n, subs = []; let cur = [], prev = null;
+      for (let i = 0; i <= n; i++) { const q = el.getPointAtLength(Math.min(len, i * ds)); if (prev && Math.hypot(q.x - prev.x, q.y - prev.y) > ds * 1.05 + 1e-6) { if (cur.length > 1) subs.push(cur); cur = []; }
+        pt.x = q.x; pt.y = q.y; const g = pt.matrixTransform(m); cur.push([g.x, g.y]); prev = q; }
+      if (cur.length > 1) subs.push(cur);
+      for (const sp of subs) { const k = rdp(sp, tol); out.push('M' + k.map(([x, y]) => `${R((x - P.vx) / P.k)} ${R((y - P.vy) / P.k)}`).join('L')); } }
+  } finally { host.remove(); }
+  return out; }
+function rdp(pts, e) { if (pts.length < 3) return pts; const [a, b] = [pts[0], pts[pts.length - 1]]; let mi = 0, md = 0; const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+  for (let i = 1; i < pts.length - 1; i++) { const d = L < 1e-6 ? Math.hypot(pts[i][0] - a[0], pts[i][1] - a[1]) : Math.abs(dy * pts[i][0] - dx * pts[i][1] + b[0] * a[1] - b[1] * a[0]) / L; if (d > md) { md = d; mi = i; } }
+  return md > e ? rdp(pts.slice(0, mi + 1), e).slice(0, -1).concat(rdp(pts.slice(mi), e)) : [a, b]; }
+// Vector file in true mm: viewBox 0 0 W H with width/height in mm (LaserGRBL maps that 1:1 to mm), all paths already flattened.
+function lzVec(W, H, body, title) { const ds = lzFlat(W, H, body);
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${f2(W)}mm" height="${f2(H)}mm" viewBox="0 0 ${f2(W)} ${f2(H)}">\n<title>${esc(title)}</title>\n<g fill="none" stroke="#000" stroke-width="0.1">\n${ds.map(d => `<path d="${d}"/>`).join('\n')}\n</g>\n</svg>\n`; }
 function lzSVG(W, H, body, title) { const P = lzPage(W, H);
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${f2(W)}mm" height="${f2(H)}mm" viewBox="${f2(P.vx)} ${f2(P.vy)} ${f2(P.vw)} ${f2(P.vh)}">\n<title>${esc(title)}</title>\n${body}\n</svg>\n`; }
-async function lzPNG(W, H, dpi, body) { // greyscale-looking PNG on white, full page size (LaserGRBL uses the whole image)
+async function lzPNG(W, H, dpi, body, crisp) { // greyscale-looking PNG on white, full page size (LaserGRBL uses the whole image)
   const pw = Math.round(W / 25.4 * dpi), ph = Math.round(H / 25.4 * dpi);
   if (Math.max(pw, ph) > 8000) throw new Error('Laser image too big: lower the size or detail.');
   const P = lzPage(W, H), svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${pw}" height="${ph}" viewBox="${f2(P.vx)} ${f2(P.vy)} ${f2(P.vw)} ${f2(P.vh)}">${body}</svg>`;
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })), img = new Image();
   await new Promise((ok, bad) => { img.onload = ok; img.onerror = () => bad(new Error('Could not draw the laser image.')); img.src = url; });
-  const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; const cx = cv.getContext('2d');
+  const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; const cx = cv.getContext('2d'); cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
   cx.fillStyle = '#fff'; cx.fillRect(0, 0, pw, ph); cx.drawImage(img, 0, 0, pw, ph); URL.revokeObjectURL(url);
   const id = cx.getImageData(0, 0, pw, ph), d = id.data;
-  for (let p = 0; p < d.length; p += 4) { const g = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]); d[p] = d[p + 1] = d[p + 2] = g; d[p + 3] = 255; }
+  for (let p = 0; p < d.length; p += 4) { const g = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]); d[p] = d[p + 1] = d[p + 2] = crisp ? (g < 128 ? 0 : 255) : g; d[p + 3] = 255; }
   cx.putImageData(id, 0, 0);
   return new Uint8Array(await (await new Promise(r => cv.toBlob(r, 'image/png'))).arrayBuffer());
 }
@@ -976,15 +997,21 @@ async function laserSteps() { await imgReady();
   if (imgItems.length) st.push({ kind: 'ENGRAVE', what: 'photo', type: 'png', items: imgItems, mode: `Line To Line Tracing, ${lpm} lines/mm (or 1bit BW Dithering)`,
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
     data: async () => pngDpi(await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"')), dpi) });
-  if (etch.length) st.push({ kind: 'ETCH', what: [...new Set(etch.map(x => x.key === 'orn' ? 'ornaments' : x.key === 'img' ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+'), type: 'png', items: etch, mode: `Line To Line Tracing, ${lpm} lines/mm`,
-    warn: 'Solid black areas. Normal etch power.',
-    data: async () => pngDpi(await lzPNG(W, H, dpi, `<g fill="#000">${etch.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"')), dpi) });
+  const isLine = it => it.key === 'orn' || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
+  const eLine = etch.filter(isLine), eFill = etch.filter(it => !isLine(it)), edpi = Math.min(Math.max(dpi * 2, 508), Math.floor(7900 * 25.4 / Math.max(W, H)));
+  const what = l => [...new Set(l.map(x => x.key === 'orn' ? 'ornaments' : x.key === 'img' ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+');
+  if (eFill.length) st.push({ kind: 'ETCH', what: what(eFill), short: 'etch fill', type: 'png', items: eFill, dpi: edpi, mode: `Line To Line Tracing (NOT Vectorize / Centerline), ${Math.round(edpi / 25.4 * 10) / 10} lines/mm or lower`,
+    warn: 'Solid filled letters/shapes, pure black on white with crisp edges. Normal etch power.',
+    data: async () => pngDpi(await lzPNG(W, H, edpi, `<g fill="#000">${eFill.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"'), true), edpi) });
+  if (eLine.length) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', short: 'etch lines', type: 'svg', items: eLine, mode: 'Vector (SVG) smooth outlines - LaserGRBL takes the size from the file',
+    warn: 'Outline etch (hollow letters, ornaments). Etch power, 1 pass.',
+    data: async () => lzVec(W, H, eLine.map(it => laserPart(it, 'fill')).join('') + mk(''), 'etch lines') });
   const cut = (list, kind, label, warn) => st.push({ kind: 'CUT', what: label, type: 'svg', items: list, mode: 'Vector (SVG) - LaserGRBL takes the size from the file', warn,
-    data: async () => lzSVG(W, H, `<g fill="none" stroke="#000" stroke-width="${hair}">${list.map(it => laserPart(it, kind)).join('')}${mk('')}</g>`, label) });
+    data: async () => lzVec(W, H, list.map(it => laserPart(it, kind)).join('') + mk(''), 'cut ' + label) });
   if (cin.length) cut(cin, 'cutin', 'inside', 'Cutting power. Run passes until it goes through.');
   if (cout.length) cut(cout, 'cutout', 'outside', 'Always LAST - the piece is free after this.');
-  st.forEach((s, i) => { s.n = i + 1; s.W = W; s.H = H; s.dpi = dpi; s.px = s.type === 'png' ? [Math.round(W / 25.4 * dpi), Math.round(H / 25.4 * dpi)] : null;
-    s.short = s.kind === 'ENGRAVE' ? 'photo' : s.kind === 'ETCH' ? 'etch' : 'cut ' + s.what; s.file = `${B} ${s.n} ${s.short}.${s.type}`; });
+  st.forEach((s, i) => { s.n = i + 1; s.W = W; s.H = H; s.dpi = s.dpi || dpi; s.px = s.type === 'png' ? [Math.round(W / 25.4 * s.dpi), Math.round(H / 25.4 * s.dpi)] : null;
+    s.short = s.short || (s.kind === 'ENGRAVE' ? 'photo' : 'cut ' + s.what); s.file = `${B} ${s.n} ${s.short}.${s.type}`; });
   return st;
 }
 let lzLast = null;
