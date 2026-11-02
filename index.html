@@ -50,7 +50,7 @@
     <div id="sheetHandle" role="button" tabindex="0" aria-label="Resize controls (tap to cycle sizes)"><span>Controls</span></div>
     <div id="layerBar">
       <div class="row"><b class="lbt">Layers</b><select id="shapeSel" class="grow" aria-label="Active layer (top of list = in front)"></select><button id="shapeVis" class="mini2" title="Show or hide this layer">Hide</button></div>
-      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add layer</option><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
+      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add layer</option><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
     </div>
     <details name="acc" id="sec-shape"><summary>Shape &amp; position</summary><div class="body">
       <label class="rg"><span>Move X</span><input type="range" min="-500" max="500" step="1" data-b="shape.x"><output></output></label>
@@ -59,23 +59,24 @@
       <label class="rg"><span>Turn</span><input type="range" min="-180" max="180" step="1" data-b="shape.rot"><output></output></label>
       <div class="row"><button id="shapeCentre" class="grow">Centre this layer</button></div>
       <div class="g2">
-        <label><span>Type</span><select data-b="base.shape"><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option></select></label>
+        <label><span>Type</span><select data-b="base.shape"><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia</option></select></label>
         <div class="checks"><label class="chk"><input type="checkbox" data-b="base.outer">Outer</label><label class="chk"><input type="checkbox" data-b="base.inner">Inner</label></div>
       </div>
       <label class="rg"><span>Width</span><input type="range" min="150" max="470" step="1" data-b="base.rx"><output></output></label>
-      <label class="rg" data-shapes="ellipse polygon star heart"><span>Height</span><input type="range" min="150" max="470" step="1" data-b="base.ry"><output></output></label>
+      <label class="rg" data-shapes="ellipse polygon star heart aus"><span>Height</span><input type="range" min="150" max="470" step="1" data-b="base.ry"><output></output></label>
       <label class="rg" data-shapes="polygon"><span>Sides</span><input type="range" min="3" max="12" step="1" data-b="base.sides"><output></output></label>
       <label class="rg" data-shapes="star"><span>Points</span><input type="range" min="3" max="12" step="1" data-b="base.points"><output></output></label>
       <label class="rg" data-shapes="star"><span>Inner depth</span><input type="range" min="0.25" max="0.9" step="0.01" data-b="base.innerRatio"><output></output></label>
       <label class="rg" data-shapes="heart"><span>Dip depth</span><input type="range" min="0" max="1" step="0.01" data-b="base.dip"><output></output></label>
-      <label class="rg" data-shapes="polygon star heart"><span>Corners</span><input type="range" min="0" max="120" step="1" data-b="base.corner"><output></output></label>
-      <label class="rg" data-shapes="polygon star heart" title="Rounds the path letters follow at points and dips; printed lines keep Corners"><span>Text smooth</span><input type="range" min="0" max="250" step="1" data-b="base.smooth"><output></output></label>
+      <label class="rg" data-shapes="polygon star heart aus"><span>Corners</span><input type="range" min="0" max="120" step="1" data-b="base.corner"><output></output></label>
+      <label class="rg" data-shapes="polygon star heart aus" title="Rounds the path letters follow at points and dips; printed lines keep Corners"><span>Text smooth</span><input type="range" min="0" max="250" step="1" data-b="base.smooth"><output></output></label>
       <label class="rg"><span>Ring gap</span><input type="range" min="40" max="250" step="1" data-b="base.gap"><output></output></label>
       <div id="gapWarn" class="hint" hidden></div>
       <label class="rg"><span>Line width</span><input type="range" min="0" max="30" step="1" data-b="base.width"><output></output></label>
       <div class="g2">
         <label><span>Line</span><input type="color" data-b="base.stroke" class="col"></label>
         <label class="chk"><input type="checkbox" data-b="base.fillOn">Fill <input type="color" data-b="base.fill" class="col"></label>
+        <label class="chk"><input type="checkbox" data-b="base.fillAbove">Fill on top of picture <span class="dim">(e.g. a band behind your text)</span></label>
       </div>
     </div></details>
     <details name="acc" id="sec-text"><summary>Text on this layer</summary><div class="body">
@@ -129,11 +130,14 @@
         <div class="row"><label><span>Colour</span><input type="color" data-b="orn.color" class="col"></label><label id="ornBerry"><span>Berries</span><input type="color" data-b="orn.color2" class="col"></label><button id="mirrorOrn" class="grow">Mirror copy</button><button id="ornLink" class="grow" title="Linked: the mirror copy moves with this one. Tap to let them move separately">🔗 Unlink</button><button id="delOrn" class="danger">Delete</button></div>
       </div>
     </div></details>
-    <details name="acc" id="sec-img"><summary>Centre image</summary><div class="body">
+    <details name="acc" id="sec-img"><summary>Pictures</summary><div class="body">
+      <div class="row"><button class="grow" data-slotbtn="1">🐶 Centre picture</button><button class="grow" data-slotbtn="2">🗺 Background picture</button></div>
+      <p class="hint" id="imgSlotHint"></p>
       <div class="row"><label class="filebtn grow">Upload…<input type="file" id="imgFile" accept="image/*" hidden></label><button id="centreImg">Centre</button><button id="delImg" class="danger">Remove</button></div>
       <div id="imgFields">
         <label class="rg"><span>Size</span><input type="range" min="40" max="1600" step="1" data-b="img.size"><output></output></label>
-        <label class="chk big"><input type="checkbox" data-b="img.clip">Clip to inner line <span class="dim">(crop anything outside it)</span></label>
+        <label id="imgClipRow"><span>Placement</span><select data-b="img.clipMode"><option value="clip">Inside path (to inside edge of line)</option><option value="clipout">Inside, to outside edge of line</option><option value="outside">Outside path only</option><option value="outin">Outside, from inside edge (runs under line)</option><option value="free">Free – no clipping</option></select></label>
+        <label><span>Path</span><select id="imgClipLine"></select></label>
         <div class="row"><button id="fitImg" class="grow" title="Scale and centre so the whole image sits inside the inner line">⤢ Fit inside line</button><button id="fillImg" class="grow" title="Scale to cover the inner shape and clip it to the line">◉ Fill &amp; clip</button></div>
         <label><span>Style</span><select data-b="img.mode"><option value="orig">Original picture</option><option value="sil">Silhouette (solid cutout)</option><option value="trace">Vector trace (SVG paths)</option></select></label>
         <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.removeBg">Remove background (corner colour)</label>
