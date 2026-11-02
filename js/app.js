@@ -932,18 +932,19 @@ async function laserSteps() {
   if (cin.length) cut(cin, 'cutin', 'inside', 'Cutting power. Run passes until it goes through.');
   if (cout.length) cut(cout, 'cutout', 'outside', 'Always LAST - the piece is free after this.');
   st.forEach((s, i) => { s.n = i + 1; s.W = W; s.H = H; s.dpi = dpi; s.px = s.type === 'png' ? [Math.round(W / 25.4 * dpi), Math.round(H / 25.4 * dpi)] : null;
-    s.file = `${s.n} - ${s.kind} ${s.what.replace(/[\\/:*?"<>|]/g, '').slice(0, 40)} (${s.type.toUpperCase()}, ${sz}).${s.type}`; });
+    s.short = s.kind === 'ENGRAVE' ? 'photo' : s.kind === 'ETCH' ? 'etch' : 'cut ' + s.what; s.file = `Wayland Forge ${String(s.n).padStart(2, '0')} ${s.short}.${s.type}`; });
   return st;
 }
 let lzLast = null;
-async function laserPack() {
+const lzBlob = s => new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' });
+async function laserPack(asZip) {
   const st = await laserSteps(), files = [];
   for (const s of st) { s.bytes = await s.data(); files.push({ name: s.file, data: s.bytes }); }
-  files.push({ name: '0 - README (read first).txt', data: lzReadme(st, $('lzMarks').checked) });
-  const blob = makeZip(files); lzLast = st;
-  download(blob, 'wayland-forge-laser-' + new Date().toISOString().slice(0, 10) + '.zip');
-  lzStepsUI(st);
-  return `${st.length} steps, ${Math.max(1, Math.round(blob.size / 1024))} KB · ${st[0].W}×${st[0].H} mm`;
+  lzLast = st; lzStepsUI(st);
+  if (asZip) { files.push({ name: 'Wayland Forge 00 read me.txt', data: lzReadme(st, $('lzMarks').checked) }); const blob = makeZip(files);
+    download(blob, 'Wayland Forge laser.zip'); return `Wayland Forge laser.zip (${st.length} steps) is in your Downloads folder. Right-click it > Extract All > Extract before opening in LaserGRBL.`; }
+  for (const s of st) { download(lzBlob(s), s.file); await new Promise(r => setTimeout(r, 900)); }
+  return `${st.length} files saved to your Downloads folder: ${st.map(s => s.file).join(' · ')}. If the browser asks to allow multiple downloads, tap Allow.`;
 }
 function lzStepText(s) {
   const L = [`STEP ${s.n}: ${s.kind} ${s.what}`, `  File: ${s.file}`, `  Size: W ${f2(s.W)} mm  x  H ${f2(s.H)} mm   Offset X 0, Y 0`];
@@ -968,17 +969,20 @@ function lzReadme(st, marks) {
 }
 function lzStepsUI(st) {
   const box = $('lzSteps'); if (!box) return;
-  box.innerHTML = '<b>Laser steps</b> <span class="dim">— run in order, one file at a time</span>' + st.map((s, i) => {
+  const s0 = st[0];
+  box.innerHTML = `<b>Laser steps</b> <span class="dim">— run in order, one file at a time</span>
+    <div class="lzhow">Files go to your <b>Downloads</b> folder. In LaserGRBL: <b>File &gt; Open File</b>, click <b>Downloads</b> on the left, pick the next file.
+    Every file is ${f2(s0.W)} × ${f2(s0.H)} mm, offset 0,0. Don't use "Reload Last File" — it reuses old size and power. LaserGRBL remembers your last numbers: check W, H, Offset and S-MAX every time, use <b>Frame</b> before running, cut last, test on scrap.</div>` + st.map((s, i) => {
     const url = URL.createObjectURL(new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' })); s.url = url;
-    return `<div class="lzstep"><img src="${url}" alt="Step ${s.n} preview"><div><b>${s.n}. ${esc(s.kind)} ${esc(s.what)}</b>
+    return `<div class="lzstep"><img src="${url}" alt="Step ${s.n} preview"><div><b>${s.n}. ${esc(s.kind)} ${esc(s.what)}</b><div class="dim">${esc(s.file)}</div>
       <div>${f2(s.W)} × ${f2(s.H)} mm · offset 0,0${s.px ? ` · ${s.px[0]}×${s.px[1]} px @ ${s.dpi} DPI` : ''}</div>
-      <div class="dim">${esc(s.mode)}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
+      <div class="dim">${esc(s.mode)}</div><div class="dim">${s.type === 'png' ? `In "Target image": tick Autosize, press the DPI button → W ${f2(s.W)}, H ${f2(s.H)}, Offset 0,0. Then speed, S-MIN 0, S-MAX, Create!` : 'No size box for SVG — size comes from the file. Set Border Speed, S-MIN, S-MAX, Create!'}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
       <label class="dim">Your settings <input data-lzset="${i}" placeholder="speed / power / passes"></label>
       <button data-lzdl="${i}">⬇ Download step ${s.n} only</button></div></div>`; }).join('');
   box.hidden = false;
 }
 $('lzSteps') && $('lzSteps').addEventListener('click', e => { const i = e.target.dataset.lzdl; if (i == null || !lzLast) return; const s = lzLast[+i];
-  download(new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' }), s.file); });
+  download(lzBlob(s), s.file); });
 function laserKeyOfSel() { return sel.img ? 'img' : sel.orn ? 'orn' : sel.letters.length ? 't:' + sel.letters[0].l : null; }
 function laserUI() {
   const box = $('laserList'); if (!box || box.contains(document.activeElement)) return;
@@ -992,9 +996,11 @@ function laserOverlay() {
 }
 $('laserList').addEventListener('change', e => { const k = e.target.dataset.lk; if (!k) return; S.laser[k] = e.target.value; e.target.blur(); update(); commit(); });
 $('laserPrev').addEventListener('change', () => render());
+$('laserZip').addEventListener('click', async () => { $('lzInfo').textContent = 'Building zip…';
+  try { $('lzInfo').textContent = await laserPack(true); } catch (err) { $('lzInfo').textContent = 'Laser export failed: ' + err.message; } });
 $('laserBtn').addEventListener('click', async () => {
   $('lzInfo').textContent = 'Building laser pack…';
-  try { $('lzInfo').textContent = 'Saved: ' + await laserPack(); } catch (err) { console.warn(err); $('lzInfo').textContent = 'Laser export failed: ' + err.message; }
+  try { $('lzInfo').textContent = await laserPack(false); } catch (err) { console.warn(err); $('lzInfo').textContent = 'Laser export failed: ' + err.message; }
 });
 ['lzW', 'lzH'].forEach(id => $(id).addEventListener('change', () => { try { localStorage.setItem('wf-lz', JSON.stringify([$('lzW').value, $('lzH').value])); } catch (e) { /* */ } }));
 try { const z = JSON.parse(localStorage.getItem('wf-lz') || 'null'); if (z) { $('lzW').value = z[0]; $('lzH').value = z[1]; } } catch (e) { /* */ }
