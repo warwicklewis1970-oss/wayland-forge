@@ -27,7 +27,7 @@ const defaults0 = () => ({
   shapes: [newShape('Layer 1')],
   layers: [newLayer('WAYLAND FORGE', 'top'), newLayer('EST. 2026', 'bottom')],
   ornaments: [{ id: uid(), type: 'star', x: 160, y: 500, r: 22, rot: 0, color: '#1b1b1b' }, { id: uid(), type: 'star', x: 840, y: 500, r: 22, rot: 0, color: '#1b1b1b' }],
-  images: [], laser: {},
+  images: [], laser: {}, hole: { on: false, x: 500, y: 150, d: 4 },
   swatches: ['#1b1b1b', '#ffffff', '#e0a043', '#8b1e1e', '#1e4d8b', '#2f6b3a']
 });
 let S = defaults();
@@ -419,8 +419,29 @@ function buildArt(editor) {
     const shape = ornSvg(o, true);
     out.push(`<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${ornPaint(o)}${editor ? ` data-k="orn" data-id="${o.id}" pointer-events="visible"` : ''}>${shape}${editor && sel.orn === o.id ? `<circle r="${o.r * (o.type === 'star' || o.type === 'dot' ? 1 : 1.15) + 8}" fill="none" stroke="#e0a043" stroke-dasharray="6 4" stroke-width="2"/>` : ''}</g>`);
   }
+  if (S.hole && S.hole.on) out.push(holeSvg(editor));
   return out.join('\n');
 }
+// ---- hanging hole (v39): one round hole, diameter in real mm, cut in the 'Cut inside' laser step ----
+function mmPerArt() { const W = +($('lzW') || {}).value, H = +($('lzH') || {}).value, s = Math.min(W, H); return (s >= 5 ? s : 100) / ART; }
+const holeR = () => S.hole.d / 2 / mmPerArt();
+function holeD() { const h = S.hole, r = holeR(); return `M${f2(h.x - r)} ${f2(h.y)}A${f2(r)} ${f2(r)} 0 1 0 ${f2(h.x + r)} ${f2(h.y)}A${f2(r)} ${f2(r)} 0 1 0 ${f2(h.x - r)} ${f2(h.y)}Z`; }
+function holeSvg(editor) { const h = S.hole, r = f2(holeR());
+  if (!editor) return `<circle cx="${f2(h.x)}" cy="${f2(h.y)}" r="${r}" fill="none" stroke="#888" stroke-width="${f2(0.25 / mmPerArt())}"/>`;
+  const bad = holeCheck(); return `<g data-k="hole"><circle cx="${f2(h.x)}" cy="${f2(h.y)}" r="${r}" fill="#fff" fill-opacity="0.01" stroke="${bad && bad.warn ? '#d0342c' : '#2a7de1'}" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="all"/><circle cx="${f2(h.x)}" cy="${f2(h.y)}" r="${f2(Math.max(+r + 14, 22))}" fill="none" stroke="transparent" stroke-width="16" pointer-events="all"/></g>`; }
+function holeOuter() { // the outer cut edge as a polygon in art coords (the shape whose outer line is the outside cut)
+  let it = null; try { it = laserItems().find(x => x.part === 'outer' && roleOf(x) === 'cutout'); } catch (e) { /* */ }
+  const sh = it ? it.sh : S.shapes.find(x => x.visible !== false) || S.shapes[0]; if (!sh || !sh.base.outer && !it) return null;
+  const ps = pathSamples(sh.id, 'outer'); return ps && ps.P.length ? { P: ps.P, half: sh.base.width / 2 * (sh.scale || 1) } : null; }
+function holeEdgeDist(x, y, E) { let m = Infinity, ins = false; const P = E.P;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[j], b = P[i], dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L));
+    m = Math.min(m, Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy)); if ((a[1] > y) !== (b[1] > y) && x < a[0] + (y - a[1]) * dx / (dy || 1e-9)) ins = !ins; }
+  return { ins, d: ins ? m + E.half : E.half - m }; } // distance from the point to the outside cut edge (cut is on the outside of the stroke)
+function holeCheck() { if (!S.hole || !S.hole.on) return null; const E = holeOuter(); if (!E) return null; const q = holeEdgeDist(S.hole.x, S.hole.y, E), mm = (q.d - holeR()) * mmPerArt();
+  return { mm, inside: q.ins || q.d > 0, warn: !(q.d > 0) || mm < 2 }; }
+function holeSnap() { const E = holeOuter(); if (!E) return; const top = E.P[0], k = mmPerArt(), need = holeR() + 3 / k; // 3 mm of wood round a 4 mm hole = centre 5 mm in
+  let y = top[1]; for (let i = 0; i < 2000; i++) { const q = holeEdgeDist(top[0], y, E); if (q.ins && q.d >= need) break; y += 0.1 / k; }
+  S.hole.x = f2(top[0]); S.hole.y = f2(y); }
 function textEl(L, editor) {
   {
     const g = layoutLayer(L).map(q => {
@@ -494,6 +515,9 @@ function syncUI() {
     if (el.type === 'checkbox') el.checked = !!o[key]; else el.value = o[key];
     const out = el.nextElementSibling; if (out && out.tagName === 'OUTPUT') out.textContent = o[key];
   });
+  if ($('holeOn')) { const h = S.hole; $('holeOn').checked = h.on; if (document.activeElement !== $('holeD')) $('holeD').value = h.d; $('holeD').disabled = $('holeSnap').disabled = false;
+    const c = holeCheck(), i = $('holeInfo'); i.hidden = !h.on; i.classList.toggle('holewarn', !!(c && c.warn));
+    i.textContent = !h.on ? '' : !c ? 'Drag the blue circle to place it.' : c.warn ? (c.inside ? `Too close to the edge: only ${Math.max(0, c.mm).toFixed(1)} mm of wood left (needs at least 2 mm). Drag it in or tap Snap to top.` : 'The hole is outside the outer cut. Drag it in or tap Snap to top.') : `Drag the circle to move it. ${c.mm.toFixed(1)} mm of wood to the edge at ${f2(Math.min(+$('lzW').value, +$('lzH').value))} mm size. Laser: cut in the Cut inside step, before the outside cut.`; }
   const sh = SB().shape;
   document.querySelectorAll('[data-shapes]').forEach(e => e.hidden = !e.dataset.shapes.split(' ').includes(sh));
   const mg = maxInnerGap(); $('gapWarn').hidden = !(SB().gap > mg); $('gapWarn').textContent = `Ring gap limited to ${Math.floor(mg)} for this shape so the inner line can't fold over itself.`;
@@ -550,7 +574,9 @@ function sanitize(raw) {
     layers: Array.isArray(o.layers) ? o.layers.map(l => Object.assign(newLayer('', 'top'), l)) : d.layers,
     ornaments: linkMirrors(Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)).map(x => ({ ...x, style: x.style === 'line' ? 'line' : 'fill' })) : d.ornaments),
     images: (Array.isArray(o.images) ? o.images : []).filter(x => x && x.src).map((x, i) => Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (i + 1) }, x)),
-    laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {} };
+    laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {},
+    hole: Object.assign({ on: false, x: 500, y: 150, d: 4 }, o.hole && typeof o.hole === 'object' ? o.hole : {}) };
+  st.hole.on = !!st.hole.on; st.hole.x = +st.hole.x || C; st.hole.y = +st.hole.y || 150; st.hole.d = +st.hole.d > 0 ? +st.hole.d : 4;
   for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart', 'aus', 'auss'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
   if (!(Array.isArray(o.images) && o.images.some(x => x && x.src))) { // older projects: centre picture -> image layer 1, background picture -> image layer 2
     const lz = st.laser;
@@ -617,6 +643,9 @@ act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot')); act('a
 act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), follow: o.follow ? { ...o.follow } : undefined }; if (Math.abs(o.x - C) < 1) o.x = C - 120; c.pair = o.id; o.pair = c.id; mirrorInto(o, c); S.ornaments.push(c); sel.orn = c.id; });
 act('delOrn', () => { const p = partnerOf(curOrn()); if (p) delete p.pair; S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
 act('clearOrn', () => { S.ornaments = []; });
+$('holeOn').addEventListener('change', () => { S.hole.on = $('holeOn').checked; if (S.hole.on && !S.hole.placed) { holeSnap(); S.hole.placed = 1; } update(); commit(); });
+$('holeD').addEventListener('change', () => { const v = +$('holeD').value; if (v > 0 && v <= 30) S.hole.d = Math.round(v * 100) / 100; update(); commit(); });
+act('holeSnap', () => { S.hole.on = true; S.hole.placed = 1; holeSnap(); });
 act('centreImg', () => { const im = IM(); if (im) { im.x = C; im.y = C; } });
 act('fitImg', () => { const im = IM(); if (im) Object.assign(im, fitInside(im)); });
 act('fillImg', () => { const im = IM(); if (im) Object.assign(im, fillInner(im), { clipMode: 'clip', clip: true }); });
@@ -790,6 +819,7 @@ stage.addEventListener('pointerdown', e => {
     openSec('sec-letter');
   } else if (k === 'sh') { const sh = S.shapes.find(s => s.id === t.dataset.id); sel.shape = sh.id; sel.orn = null; sel.letters = []; fixSel(); drag = { obj: sh, x0: sh.x, y0: sh.y, p }; if (S.shapes.length > 1) openSec('sec-shape'); }
   else if (k === 'orn') { sel.orn = t.dataset.id; sel.letters = []; const o = curOrn(); drag = { obj: o, x0: o.x, y0: o.y, p, orn: true }; openSec('sec-orn'); }
+  else if (k === 'hole') { sel.orn = null; sel.letters = []; drag = { obj: S.hole, x0: S.hole.x, y0: S.hole.y, p }; openSec('sec-orn'); }
   else if (k === 'img') { sel.slot = t.dataset.slot || (t.closest('[data-slot]') || { dataset: {} }).dataset.slot || null; sel.img = true; sel.orn = null; sel.letters = []; const im = IM(); drag = { obj: im, x0: im.x, y0: im.y, p }; openSec('sec-img'); }
   else { sel.orn = null; if (!additive(e)) sel.letters = []; drag = { mq: true, p, cx: e.clientX, cy: e.clientY }; }
   drag.sx = e.clientX; drag.sy = e.clientY;
@@ -936,6 +966,7 @@ function laserItems() {
     for (const L of S.layers) if (L.text && shapeOf(L) === sh) it.push({ key: 't:' + L.id, sh, name: nm + 'Text: ' + L.text, def: 'etch' }); });
   if (S.ornaments.length) { const nl = S.ornaments.filter(o => o.style === 'line').length, nf = S.ornaments.length - nl;
     it.push({ key: 'orn', name: 'Ornaments' + (!nl ? ' (fill)' : !nf ? ' (line)' : ` (${nf} fill, ${nl} line)`), def: 'etch' }); }
+  if (S.hole && S.hole.on) it.push({ key: 'hole', name: `Hanging hole (${S.hole.d} mm)`, def: 'cutin' });
   S.images.filter(im => im.src && im.visible !== false).forEach(im => it.push({ key: 'img:' + im.id, im, name: (im.name || 'Image') + (im.mode === 'trace' ? ' (trace)' : im.mode === 'sil' ? ' (silhouette)' : ''), def: im.mode === 'orig' ? 'image' : 'etch' }));
   const z = x => x.im ? (x.im.behind ? 0 : 2) : x.part === 'fill' && !x.sh.base.fillAbove ? 1 : x.part === 'fill' ? 3 : 4; // same stacking as the design
   return it.map((x, i) => [x, i]).sort((p, q) => z(p[0]) - z(q[0]) || p[1] - q[1]).map(p => p[0]);
@@ -957,6 +988,7 @@ function laserPart0(it, kind) {
     if (cut) { const d = ringD(kind === 'cutout' ? d0 + w : d0 - w); return d ? `<path d="${d}"/>` : ''; }
     return w > 0 ? `<path d="${ringD(d0 + w)}${ringD(d0 - w)}" fill-rule="evenodd"${kind === 'pic' ? ` fill="${b.stroke}"` : ''}/>` : '';
   }
+  if (k === 'hole') return S.hole && S.hole.on && kind !== 'pic' ? `<path d="${holeD()}"/>` : '';
   if (k === 'fill') return `<path d="${ringD(0)}"${kind === 'pic' ? ` fill="${b.fill}"` : ''}/>`;
   if (k === 'orn') return S.ornaments.filter(o => !it.ornStyle || (o.style === 'line' ? 'line' : 'fill') === it.ornStyle).map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' ? ornPaint(o) : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
   if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? (L.style === 'hollow' ? ` fill="none" stroke="${L.color}" stroke-width="2.5"` : ` fill="${L.color}"`) : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
@@ -1159,7 +1191,8 @@ async function laserSteps() { await imgReady();
       data: async () => lzVecG(W, H, list.map(it => laserPart(it, kind)).join('') + mk(''), 'cut ' + label, b.F, b.P, smax, b.passes) });
     else st.push({ kind: 'CUT', job, what: label, type: 'svg', items: list, mode: 'Vector (SVG) - LaserGRBL takes the size from the file', warn,
       data: async () => lzVec(W, H, list.map(it => laserPart(it, kind)).join('') + mk(''), 'cut ' + label) }); };
-  if (cin.length) cut(cin, 'cutin', 'inside', 'Cutting. Passes are built into the .nc file.');
+  const hc = cin.some(x => x.key === 'hole') ? holeCheck() : null;
+  if (cin.length) cut(cin, 'cutin', 'inside', (hc && hc.warn ? `WARNING: the hanging hole has only ${Math.max(0, hc.mm).toFixed(1)} mm of wood to the edge (under 2 mm) - it may break out. ` : '') + 'Cutting. Passes are built into the .nc file.' + (hc ? ' Includes the hanging hole. Runs before the outside cut so the piece stays put.' : ''));
   if (cout.length) cut(cout, 'cutout', 'outside', 'Always LAST - the piece is free after this.');
   st.forEach((s, i) => { s.n = i + 1; s.W = W; s.H = H; s.dpi = s.dpi || dpi; s.px = s.type === 'png' ? [Math.round(W / 25.4 * s.dpi), Math.round(H / 25.4 * s.dpi)] : null;
     s.short = s.short || (s.kind === 'ENGRAVE' ? 'photo' : 'cut ' + s.what); s.b = bz(s.job); if (s.type !== 'nc') s.short += ' ' + lzTagOf(s.job, s.b); s.file = `${B} ${s.n} ${s.short}.${s.type}`; });
@@ -1281,6 +1314,7 @@ $('lzDlgGo').addEventListener('click', async () => { $('lzDlg').close(); $('lzIn
   e.addEventListener('change', () => { try { localStorage.setItem('wf-' + id, e.value); } catch (x) { /* */ } }); });
 $('lzEtch') && $('lzEtch').addEventListener('change', () => { try { localStorage.setItem('wf-lzetch', $('lzEtch').value); } catch (e) { /* */ } });
 try { const v = localStorage.getItem('wf-lzetch'); if (v && $('lzEtch')) $('lzEtch').value = v; } catch (e) { /* */ }
+['lzW', 'lzH'].forEach(id => $(id).addEventListener('input', () => { if (S.hole && S.hole.on) update(); }));
 ['lzW', 'lzH'].forEach(id => $(id).addEventListener('change', () => { try { localStorage.setItem('wf-lz', JSON.stringify([$('lzW').value, $('lzH').value])); } catch (e) { /* */ } }));
 try { const z = JSON.parse(localStorage.getItem('wf-lz') || 'null'); if (z) { $('lzW').value = z[0]; $('lzH').value = z[1]; } } catch (e) { /* */ }
 
@@ -1289,8 +1323,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v38';
-const WHATS_NEW = 'v38 (laser): 1) Burn settings are now one tap-to-open section per step, e.g. Step 1 – Image, Step 2 – Lettering & ornaments, Step 3 – Cut outside. The closed header shows the current values, e.g. LTL 25% 3000. 2) Inside each: Mode (Image and filled lettering only; outlines and cuts are always Vector), Power % and Speed as plain number boxes, and Passes for cuts. Each step is set on its own. 3) New starting values: Image Line To Line 25% / 3000; Lettering & ornaments 25% / 3000; Cut inside and Cut outside 100% / 1000, 3 passes. Your v37 numbers are not carried over, so these apply. After you change a step, the app remembers it. 4) The same sections appear on the step cards after export, and changing one there rebuilds that file. Size, position, alignment and the G-code format are unchanged. Export again before you burn. v37 (laser): 1) Materials are gone: no Material picker, no presets, no Save/Rename/Delete, and no material in file names. 2) Each step on the Burn settings screen and on each step card now has three settings: Mode (Line To Line, Dithering or Vector), Power % (type any value 1-100) and Speed (type any value in mm/min; a warning shows outside 100-20000). Cuts also keep Passes (1-5). 3) Modes for Photo and Etch fill: Line To Line = rows as before; Dithering = black/white dots, then rows; Vector = traced outlines burned as paths (Etch fill: the outlines of the filled letters and ornaments). Etch lines and cuts always burn as Vector. 4) Every step starts at Power 100%, Speed 1000 (cuts 3 passes), marked starting guess - turn power down for etching before you burn. Your last numbers for each step are remembered. 5) File names now show mode, power and speed, e.g. 1 photo LTL P100 F1000.nc, cut outside VEC P100 F1000 x3.nc. Size, position, alignment and the G-code format are unchanged. Export again before you burn. v36 (laser): 1) New Material picker in the Laser panel: 4 mm beech ply, 1 mm basswood, or + Save new. Each material keeps speed and power for Photo, Etch fill, Etch lines, Cut inside and Cut outside, plus passes for cuts. Ply photo and etch fill start at your 3000 / 50%; everything else is marked not tested (basswood raster starts at 35%). Rename, Delete, Save to preset. Saved on this device, kept through updates. 2) Tapping Download/zip now opens a Burn settings screen: pick the material, check or change speed, power and passes, then Export. Etch lines and cuts are now .nc G-code too (same safe format as v35, passes repeat the path), so every file just opens and Starts. To get the old SVG cut and outline files back, set Line steps as: SVG. After export, every step card also has Speed and Power boxes (and Passes for cuts). For .nc steps the numbers go into the file; for SVG steps the card shows what to type in LaserGRBL. 3) File names now include the material and settings, e.g. 1 photo basswood F3000 P35.nc. 4) The old Photo/Letter speed and power boxes are replaced by the material table. Size, position, alignment and shapes are unchanged. Export again before you burn. v35 (laser): the photo and filled-letter .nc files now match LaserGRBL\'s own G-code: short lines only (the long note lines at the top were longer than the laser board accepts), laser off (M5) at the start, speed on the first burn line, and every position kept at 0 or more and inside the page. Size, position, speed and power are unchanged. Export again before you burn. If LaserGRBL shows MachineAlarm: press OK, then the padlock (Unlock) button, or Home first if your laser has homing. v34: no laser file changes (this note is now a small bar you can close). What changed in v33 (laser): 1) The photo and filled-letter steps are now G-code files (.nc) instead of PNG pictures. In LaserGRBL: File > Open File > pick it > Start. No picture box opens, so there is no size, offset or Autosize to set, and it lines up with the cut by itself. 2) Speed and power for those two steps are set in the app Laser panel (Photo speed/power, Letter speed/power, starting at 3000 and 50%) and written into the file; the numbers are in the file name. To fine-tune at the laser, use the S (power) and G1 (speed) buttons in LaserGRBL\'s bottom bar. 3) Laser max S ($30) box, default 1000: power % is worked out from it. 4) The old PNG files are still there: set Picture steps as to PNG. SVG files (outline etch and cuts) are unchanged.';
+const APP_VERSION = 'v39';
+const WHATS_NEW = "v39 (hanging hole): 1) New Hanging hole option in the Ornaments section: tick it on, type the diameter in mm (starts at 4), drag the circle on the design, or tap Snap to top to centre it near the top point with 5 mm to the edge. 2) The app warns in red if there is less than 2 mm of wood between the hole and the outside edge. 3) Laser: the hole is cut in the Cut inside step (added if your job didn't have one), with the same Power / Speed / Passes settings (100% / 1000 / 3 passes to start), and always before the outside cut so the piece doesn't move. 4) Print and POD files (SVG, PDF, PNG) show the hole as a thin grey outline. Nothing else changed: no defaults, no other laser files, sizes or positions.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };

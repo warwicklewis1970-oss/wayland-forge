@@ -143,6 +143,8 @@
     <details name="acc" id="sec-orn"><summary>Ornaments</summary><div class="body">
       <div class="row"><button id="addStar" class="grow">+ Star</button><button id="addDot" class="grow">+ Dot</button><button id="clearOrn" class="danger">Clear all</button></div>
       <div class="row"><button id="addHolly1" class="grow">+ Holly</button><button id="addHolly2" class="grow">+ Holly ×2</button><button id="addNote" class="grow">+ ♪</button><button id="addNotes" class="grow">+ ♫</button></div>
+      <div class="row holebox"><label class="chk" title="A round hole to hang it, cut by the laser instead of drilled"><input type="checkbox" id="holeOn">Hanging hole</label><label><span>Ø mm</span><input type="number" id="holeD" inputmode="decimal" min="1" max="30" step="any" value="4" style="width:5em"></label><button id="holeSnap" class="grow" title="Centre it near the top, 5 mm in from the edge">Snap to top</button></div>
+      <div id="holeInfo" class="hint" hidden></div>
       <div id="ornNone" class="hint">Click an ornament to edit it.</div>
       <div id="ornFields">
         <label class="chk" title="Stick it to a line of the badge and slide it round"><input type="checkbox" id="ornFollow">Follow path</label>
