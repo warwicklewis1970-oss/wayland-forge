@@ -1063,14 +1063,14 @@ async function laserSteps() { await imgReady();
   const nm = l => l.map(x => x.name.replace(/^.* – /, '')).join(', ');
   if (imgItems.length) st.push({ kind: 'ENGRAVE', what: 'photo', type: 'png', items: imgItems, mode: `Line To Line Tracing, ${lpm} lines/mm`,
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
-    data: async () => pngDpi(await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"'), false, true), dpi) });
+    data: async () => pngDpi(await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"'), false, false), dpi) });
   const isLine = it => (it.key === 'orn' && it.ornStyle === 'line') || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
   const eLine = etch.filter(isLine), eFill = etch.filter(it => !isLine(it)), edpi = Math.min(Math.max(dpi * 2, 508), Math.floor(7900 * 25.4 / Math.max(W, H)));
   const what = l => [...new Set(l.map(x => x.key === 'orn' ? 'ornaments' : x.key.startsWith('img') ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+');
   const eAsPng = ($('lzEtch') ? $('lzEtch').value : 'png') !== 'svg', eBody = `<g fill="#000">${eFill.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"');
   if (eFill.length && eAsPng) st.push({ kind: 'ETCH', what: what(eFill), short: 'etch fill', type: 'png', items: eFill, mode: `Picture, Line To Line Tracing, ${lpm} lines/mm, pure black and white`,
     warn: 'Solid filled letters/shapes as a black-and-white picture. Use Line To Line. Normal etch power (you found 50% / speed 3000 good on 4 mm beech ply).',
-    data: async () => pngDpi(await lzPNG(W, H, dpi, eBody, true, true), dpi) });
+    data: async () => pngDpi(await lzPNG(W, H, dpi, eBody, true, false), dpi) });
   if (eFill.length && !eAsPng) st.push({ kind: 'ETCH', what: what(eFill), short: 'etch fill lines', type: 'svg', items: eFill, mode: 'Vector (SVG) fill lines 0.1 mm apart - opens straight into the speed/power box, no size or offset to set',
     warn: 'Solid filled letters/shapes, burned as tight lines. This burns HOTTER than the picture version at the same power - start well below 50% and use a fast speed.',
     data: async () => lzHatch(W, H, eBody, 'etch fill lines') });
@@ -1100,10 +1100,10 @@ function lzStepText(s) {
   const L = [`STEP ${s.n}: ${s.kind} ${s.what}`, `  File: ${s.file}`];
   if (s.type === 'png') L.push(`  Picture file, ${f2(s.W)} x ${f2(s.H)} mm (${s.px[0]} x ${s.px[1]} px at ${s.dpi} DPI).`,
     `  LaserGRBL: File > Open File > pick it > choose Line To Line Tracing > Next.`,
-    `  In "Target image": leave Autosize UNTICKED (ignore the DPI box and button). Type exactly:`,
-    `     Size  W ${f2(s.W)}   H ${f2(s.H)}      Offset  X 0   Y 0`,
+    `  In "Target image": tick Autosize, press the DPI button next to it (uses ${s.dpi} DPI from the file).`,
+    `     W must then read ${f2(s.W)}, H ${f2(s.H)}. Type Offset  X 0   Y 0.`,
     `  Then set speed and S-MAX > Create!`,
-    `  The file has 4 faint 0.3 mm dots in the page corners so Frame shows the FULL ${f2(s.W)} x ${f2(s.H)} mm page (Frame only traces what burns).`,
+    `  Frame only traces the parts that burn (not the white page), so it looks smaller than the page. That is normal - do NOT move the wood or the laser to match it.`,
     `  (Picture files have size and offset boxes. Type the same numbers every time so they line up with the cut.)`);
   else L.push(`  LaserGRBL: File > Open File > pick it > set speed and S-MAX > Create!  Nothing else to set - it lines up by itself.`);
   L.push(`  ${s.warn}`, `  Your settings:  speed ________  S-MAX ________  passes ____  result ______________`, ``);
@@ -1112,7 +1112,7 @@ function lzStepText(s) {
 function lzReadme(st, marks) {
   const s0 = st[0], L = [`WAYLAND FORGE - LASER PACK`, `Every file is the same ${f2(s0.W)} x ${f2(s0.H)} mm page with its corner at the laser's 0,0 (front-left / home).`,
     `Run the files in number order, one at a time, without moving the wood. For each file: File > Open File > pick it > speed and power > Create! > Start.`,
-    `SVG files (outlines and cuts) line up by themselves. PNG picture files (photo, filled letters) need: Line To Line, Autosize unticked, W/H = page size, X 0 Y 0.`,
+    `SVG files (outlines and cuts) line up by themselves. PNG picture files (photo, filled letters) need: Line To Line, tick Autosize, press DPI, Offset X 0 Y 0. Frame on a picture only shows the burnt parts - never move the wood to match it.`,
     `Unzip first (right-click > Extract All). Don't use "Reload Last File" between steps.`, ``];
   st.forEach(s => L.push(lzStepText(s)));
   L.push(`Use the Frame button before the first file if you want to see where it goes.`, `Test on scrap first: a photo on 1-4 mm wood needs very little power.`,
@@ -1124,11 +1124,11 @@ function lzStepsUI(st) {
   const s0 = st[0];
   box.innerHTML = `<b>Laser steps</b> <span class="dim">— run in order, one file at a time</span>
     <div class="lzhow">Files go to your <b>Downloads</b> folder. In LaserGRBL: <b>File &gt; Open File</b>, click <b>Downloads</b> on the left, pick the next file.
-    Every file is the same ${f2(s0.W)} × ${f2(s0.H)} mm page and lines up by itself. Don't move the wood between files. For each file just set <b>speed</b> and <b>power</b>, then <b>Create!</b>${st.some(x => x.type === 'png') ? ` Picture files (photo and filled letters) have size boxes: leave Autosize unticked and type <b>W ${f2(s0.W)} · H ${f2(s0.H)} · X 0 · Y 0</b>.` : ''}</div>` + st.map((s, i) => {
+    Every file is the same ${f2(s0.W)} × ${f2(s0.H)} mm page and lines up by itself. Don't move the wood between files. For each file just set <b>speed</b> and <b>power</b>, then <b>Create!</b>${st.some(x => x.type === 'png') ? ` Picture files (photo and filled letters) have size boxes: tick <b>Autosize</b>, press <b>DPI</b> (W ${f2(s0.W)} · H ${f2(s0.H)}), type <b>X 0 · Y 0</b>. Frame on a picture only shows the burnt parts: don't move the wood to match it.` : ''}</div>` + st.map((s, i) => {
     const url = URL.createObjectURL(new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' })); s.url = url;
     return `<div class="lzstep"><img src="${url}" alt="Step ${s.n} preview"><div><b>${s.n}. ${esc(s.kind)} ${esc(s.what)}</b><div class="dim">${esc(s.file)}</div>
       <div>${f2(s.W)} × ${f2(s.H)} mm${s.px ? ` · ${s.px[0]}×${s.px[1]} px @ ${s.dpi} DPI` : ''}</div>
-      <div class="${s.type === 'png' ? 'lzdo' : 'dim'}">${s.type === 'png' ? `Line To Line Tracing → Next. Leave <b>Autosize unticked</b> (ignore DPI). Type: <b class="lzval">W ${f2(s.W)} &nbsp; H ${f2(s.H)} &nbsp; X 0 &nbsp; Y 0</b>. Speed, S-MAX, Create! Frame shows the full page thanks to 4 faint corner dots.` : 'Open → speed and S-MAX → Create! Lines up by itself.'}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
+      <div class="${s.type === 'png' ? 'lzdo' : 'dim'}">${s.type === 'png' ? `Line To Line Tracing → Next. Tick <b>Autosize</b>, press <b>DPI</b> → W ${f2(s.W)}, H ${f2(s.H)}. Type <b class="lzval">X 0 &nbsp; Y 0</b>. Speed, S-MAX, Create! Frame only shows the burnt parts - don't move the wood to match it.` : 'Open → speed and S-MAX → Create! Lines up by itself.'}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
       <label class="dim">Your settings <input data-lzset="${i}" placeholder="speed / power / passes"></label>
       <button data-lzdl="${i}">⬇ Download step ${s.n} only</button></div></div>`; }).join('');
   box.hidden = false;
@@ -1164,9 +1164,9 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v30';
-const WHATS_NEW = 'What changed in v30 (laser): ornaments now have Fill or Line (Ornaments panel, Fill is the default). Filled ornaments burn in the same etch fill file as filled letters (2 etch fill.png, or the lines SVG if you chose that). Line ornaments burn in the etch lines SVG with hollow letters. Before v30 all ornaments went in the etch lines SVG. Nothing else in the laser files changed.';
-$('homeNews') && ($('homeNews').textContent = WHATS_NEW); $('updNews') && ($('updNews').textContent = 'v30: ornaments Fill/Line - filled ornaments now burn with filled letters.');
+const APP_VERSION = 'v31';
+const WHATS_NEW = 'What changed in v31 (laser): the 4 faint corner dots added in v28 are removed from the photo and etch fill PNGs, and the picture steps are back to the way that lined up for you before v28: Line To Line, tick Autosize, press DPI, Offset X 0 Y 0. Frame on a picture only traces the burnt parts, so do not move the wood or laser to match it. Nothing else in the laser files changed.';
+$('homeNews') && ($('homeNews').textContent = WHATS_NEW); $('updNews') && ($('updNews').textContent = 'v31: corner dots removed from picture files; photo/etch fill back to Autosize + DPI, X 0 Y 0.');
 $('homeVer').textContent = 'Wayland Forge ' + APP_VERSION;
 $('updBtn').onclick = () => location.reload();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {
