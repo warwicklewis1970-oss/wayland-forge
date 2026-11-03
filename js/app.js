@@ -1064,9 +1064,13 @@ async function laserSteps() { await imgReady();
   const isLine = it => it.key === 'orn' || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
   const eLine = etch.filter(isLine), eFill = etch.filter(it => !isLine(it)), edpi = Math.min(Math.max(dpi * 2, 508), Math.floor(7900 * 25.4 / Math.max(W, H)));
   const what = l => [...new Set(l.map(x => x.key === 'orn' ? 'ornaments' : x.key.startsWith('img') ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+');
-  if (eFill.length) st.push({ kind: 'ETCH', what: what(eFill), short: 'etch fill', type: 'svg', items: eFill, mode: 'Vector (SVG) fill lines 0.1 mm apart - opens straight into the speed/power box, no size or offset to set',
-    warn: 'Solid filled letters/shapes, burned as tight lines. Normal etch power. Use a fast speed (it is many short lines).',
-    data: async () => lzHatch(W, H, `<g fill="#000">${eFill.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"'), 'etch fill') });
+  const eAsPng = ($('lzEtch') ? $('lzEtch').value : 'png') !== 'svg', eBody = `<g fill="#000">${eFill.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"');
+  if (eFill.length && eAsPng) st.push({ kind: 'ETCH', what: what(eFill), short: 'etch fill', type: 'png', items: eFill, mode: `Picture, Line To Line Tracing, ${lpm} lines/mm, pure black and white`,
+    warn: 'Solid filled letters/shapes as a black-and-white picture. Use Line To Line. Normal etch power (you found 50% / speed 3000 good on 4 mm beech ply).',
+    data: async () => pngDpi(await lzPNG(W, H, dpi, eBody, true, true), dpi) });
+  if (eFill.length && !eAsPng) st.push({ kind: 'ETCH', what: what(eFill), short: 'etch fill lines', type: 'svg', items: eFill, mode: 'Vector (SVG) fill lines 0.1 mm apart - opens straight into the speed/power box, no size or offset to set',
+    warn: 'Solid filled letters/shapes, burned as tight lines. This burns HOTTER than the picture version at the same power - start well below 50% and use a fast speed.',
+    data: async () => lzHatch(W, H, eBody, 'etch fill lines') });
   if (eLine.length) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', short: 'etch lines', type: 'svg', items: eLine, mode: 'Vector (SVG) smooth outlines - LaserGRBL takes the size from the file',
     warn: 'Outline etch (hollow letters, ornaments). Etch power, 1 pass.',
     data: async () => lzVec(W, H, eLine.map(it => laserPart(it, 'fill')).join('') + mk(''), 'etch lines') });
@@ -1091,13 +1095,13 @@ async function laserPack(asZip) {
 }
 function lzStepText(s) {
   const L = [`STEP ${s.n}: ${s.kind} ${s.what}`, `  File: ${s.file}`];
-  if (s.type === 'png') L.push(`  Photo picture, ${f2(s.W)} x ${f2(s.H)} mm (${s.px[0]} x ${s.px[1]} px at ${s.dpi} DPI).`,
+  if (s.type === 'png') L.push(`  Picture file, ${f2(s.W)} x ${f2(s.H)} mm (${s.px[0]} x ${s.px[1]} px at ${s.dpi} DPI).`,
     `  LaserGRBL: File > Open File > pick it > choose Line To Line Tracing > Next.`,
     `  In "Target image": leave Autosize UNTICKED (ignore the DPI box and button). Type exactly:`,
     `     Size  W ${f2(s.W)}   H ${f2(s.H)}      Offset  X 0   Y 0`,
     `  Then set speed and S-MAX > Create!`,
     `  The file has 4 faint 0.3 mm dots in the page corners so Frame shows the FULL ${f2(s.W)} x ${f2(s.H)} mm page (Frame only traces what burns).`,
-    `  (This is the ONLY file that has size and offset boxes. Do the photo FIRST so you can check them before anything burns.)`);
+    `  (Picture files have size and offset boxes. Type the same numbers every time so they line up with the cut.)`);
   else L.push(`  LaserGRBL: File > Open File > pick it > set speed and S-MAX > Create!  Nothing else to set - it lines up by itself.`);
   L.push(`  ${s.warn}`, `  Your settings:  speed ________  S-MAX ________  passes ____  result ______________`, ``);
   return L.join('\r\n');
@@ -1105,7 +1109,7 @@ function lzStepText(s) {
 function lzReadme(st, marks) {
   const s0 = st[0], L = [`WAYLAND FORGE - LASER PACK`, `Every file is the same ${f2(s0.W)} x ${f2(s0.H)} mm page with its corner at the laser's 0,0 (front-left / home).`,
     `Run the files in number order, one at a time, without moving the wood. For each file: File > Open File > pick it > speed and power > Create! > Start.`,
-    `All letter, ornament and cut files are vector (SVG): LaserGRBL places them by the page itself, so they always line up. Only a photo (PNG) has size/offset boxes.`,
+    `SVG files (outlines and cuts) line up by themselves. PNG picture files (photo, filled letters) need: Line To Line, Autosize unticked, W/H = page size, X 0 Y 0.`,
     `Unzip first (right-click > Extract All). Don't use "Reload Last File" between steps.`, ``];
   st.forEach(s => L.push(lzStepText(s)));
   L.push(`Use the Frame button before the first file if you want to see where it goes.`, `Test on scrap first: a photo on 1-4 mm wood needs very little power.`,
@@ -1117,7 +1121,7 @@ function lzStepsUI(st) {
   const s0 = st[0];
   box.innerHTML = `<b>Laser steps</b> <span class="dim">— run in order, one file at a time</span>
     <div class="lzhow">Files go to your <b>Downloads</b> folder. In LaserGRBL: <b>File &gt; Open File</b>, click <b>Downloads</b> on the left, pick the next file.
-    Every file is the same ${f2(s0.W)} × ${f2(s0.H)} mm page and lines up by itself. Don't move the wood between files. For each file just set <b>speed</b> and <b>power</b>, then <b>Create!</b>${st.some(x => x.type === 'png') ? ` Only the photo has size boxes: leave Autosize unticked and type <b>W ${f2(s0.W)} · H ${f2(s0.H)} · X 0 · Y 0</b>.` : ''}</div>` + st.map((s, i) => {
+    Every file is the same ${f2(s0.W)} × ${f2(s0.H)} mm page and lines up by itself. Don't move the wood between files. For each file just set <b>speed</b> and <b>power</b>, then <b>Create!</b>${st.some(x => x.type === 'png') ? ` Picture files (photo and filled letters) have size boxes: leave Autosize unticked and type <b>W ${f2(s0.W)} · H ${f2(s0.H)} · X 0 · Y 0</b>.` : ''}</div>` + st.map((s, i) => {
     const url = URL.createObjectURL(new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' })); s.url = url;
     return `<div class="lzstep"><img src="${url}" alt="Step ${s.n} preview"><div><b>${s.n}. ${esc(s.kind)} ${esc(s.what)}</b><div class="dim">${esc(s.file)}</div>
       <div>${f2(s.W)} × ${f2(s.H)} mm${s.px ? ` · ${s.px[0]}×${s.px[1]} px @ ${s.dpi} DPI` : ''}</div>
@@ -1147,6 +1151,8 @@ $('laserBtn').addEventListener('click', async () => {
   $('lzInfo').textContent = 'Building laser pack…';
   try { $('lzInfo').textContent = await laserPack(false); } catch (err) { console.warn(err); $('lzInfo').textContent = 'Laser export failed: ' + err.message; }
 });
+$('lzEtch') && $('lzEtch').addEventListener('change', () => { try { localStorage.setItem('wf-lzetch', $('lzEtch').value); } catch (e) { /* */ } });
+try { const v = localStorage.getItem('wf-lzetch'); if (v && $('lzEtch')) $('lzEtch').value = v; } catch (e) { /* */ }
 ['lzW', 'lzH'].forEach(id => $(id).addEventListener('change', () => { try { localStorage.setItem('wf-lz', JSON.stringify([$('lzW').value, $('lzH').value])); } catch (e) { /* */ } }));
 try { const z = JSON.parse(localStorage.getItem('wf-lz') || 'null'); if (z) { $('lzW').value = z[0]; $('lzH').value = z[1]; } } catch (e) { /* */ }
 
@@ -1155,7 +1161,9 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v28';
+const APP_VERSION = 'v29';
+const WHATS_NEW = 'What changed in v29 (laser): filled letters are a picture file (PNG) again, like before v26 — use Line To Line and type the same W/H/X 0/Y 0 as the photo. It has the 4 faint corner dots so it frames full-page and lines up with the cut. The line (SVG) version is still there: Laser panel > "Letter etch file". Nothing else in the laser files changed.';
+$('homeNews') && ($('homeNews').textContent = WHATS_NEW); $('updNews') && ($('updNews').textContent = 'v29: letters back to picture (Line To Line) by default.');
 $('homeVer').textContent = 'Wayland Forge ' + APP_VERSION;
 $('updBtn').onclick = () => location.reload();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {

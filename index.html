@@ -22,13 +22,14 @@
       <button id="homeTour" class="hb">▶ Tutorial</button>
     </div>
     <div class="hver" id="homeVer"></div>
+    <div class="hnews" id="homeNews"></div>
     <div id="homeProjs" hidden>
       <div class="row hph"><button id="homeBack">← Back</button><b class="grow">Projects</b><label class="filebtn">Open file…<input type="file" id="homeLoad" accept=".json,application/json" hidden></label></div>
       <ul id="projList"></ul>
     </div>
   </div>
 </div>
-<div id="updBar" hidden><span>New version ready</span><button id="updBtn">Tap to update</button></div>
+<div id="updBar" hidden><span>New version ready <small id="updNews"></small></span><button id="updBtn">Tap to update</button></div>
 <header>
   <img src="icons/anvil.svg" alt="" class="logo"><button id="homeBtn" title="Home: start screen and projects (your work is kept)" aria-label="Home">⌂</button><button id="helpBtn" title="Help &amp; tutorial (Wayland the blacksmith)" aria-label="Help and tutorial"></button><h1>Wayland Forge</h1><button id="nameBtn" class="namebtn">Untitled ✎</button>
   <div class="spacer"></div>
@@ -195,6 +196,7 @@
         <label><span>H mm</span><input type="number" id="lzH" value="100" min="5" max="800" step="0.5"></label>
         <label><span>Detail</span><select id="lzDpi"><option value="127">5 lines/mm</option><option value="254">10 lines/mm</option><option value="318" selected>12.5 lines/mm</option><option value="400">16 lines/mm</option></select></label>
       </div>
+      <label><span>Letter etch file</span><select id="lzEtch"><option value="png" selected>Picture (Line To Line, default)</option><option value="svg">Lines (SVG)</option></select></label>
       <label class="chk"><input type="checkbox" id="lzMarks">Tiny corner marks in every file <span class="dim">(only if LaserGRBL moves files)</span></label>
       <button id="laserBtn" class="accent wide">⬇ Download all steps (separate files)</button>
       <button id="laserZip" class="wide">Or download as one .zip</button>
