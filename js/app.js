@@ -267,8 +267,9 @@ function ornSvg(o, pic) { // inner markup for one ornament; pic=false => single 
   if (o.type === 'star') return `<path d="${starD(o.r)}"/>`;
   if (o.type === 'dot') return `<circle r="${o.r}"/>`;
   const p = ornParts(o); if (!p) return '';
-  return `<path fill-rule="evenodd" d="${p.body}"/>` + (p.berries ? `<path d="${p.berries}"${pic && o.color2 ? ` fill="${o.color2}"` : ''}/>` : '');
+  return `<path fill-rule="evenodd" d="${p.body}"/>` + (p.berries ? `<path d="${p.berries}"${pic && o.color2 ? (o.style === 'line' ? ` stroke="${o.color2}"` : ` fill="${o.color2}"`) : ''}/>` : '');
 }
+const ornPaint = o => o.style === 'line' ? ` fill="none" stroke="${o.color}" stroke-width="2.5" stroke-linejoin="round"` : ` fill="${o.color}"`; // Fill (default) or Line, like the letters
 function starD(r) {
   let d = ''; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.42 : r; d += (i ? 'L' : 'M') + f2(rr * Math.cos(a)) + ' ' + f2(rr * Math.sin(a)); }
   return d + 'Z';
@@ -416,7 +417,7 @@ function buildArt(editor) {
   });
   for (const o of S.ornaments) {
     const shape = ornSvg(o, true);
-    out.push(`<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}" fill="${o.color}"${editor ? ` data-k="orn" data-id="${o.id}"` : ''}>${shape}${editor && sel.orn === o.id ? `<circle r="${o.r * (o.type === 'star' || o.type === 'dot' ? 1 : 1.15) + 8}" fill="none" stroke="#e0a043" stroke-dasharray="6 4" stroke-width="2"/>` : ''}</g>`);
+    out.push(`<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${ornPaint(o)}${editor ? ` data-k="orn" data-id="${o.id}" pointer-events="visible"` : ''}>${shape}${editor && sel.orn === o.id ? `<circle r="${o.r * (o.type === 'star' || o.type === 'dot' ? 1 : 1.15) + 8}" fill="none" stroke="#e0a043" stroke-dasharray="6 4" stroke-width="2"/>` : ''}</g>`);
   }
   return out.join('\n');
 }
@@ -473,7 +474,7 @@ function pathNearest(ps, x, y) { let bi = 0, bv = Infinity; ps.P.forEach(([px, p
 function applyFollow(o) { const f = o.follow; if (!f || !f.on) return; const q = pathAt(pathSamples(f.shape, f.path), f.t || 0); if (!q) return;
   o.x = f2(q.x + q.ty * (f.off || 0)); o.y = f2(q.y - q.tx * (f.off || 0)); if (f.turn) o.rot = Math.round(Math.atan2(q.ty, q.tx) * 180 / Math.PI * 10) / 10; }
 const partnerOf = o => o && o.pair ? S.ornaments.find(x => x.id === o.pair && x.pair === o.id) || null : null;
-function mirrorInto(o, p) { Object.assign(p, { x: f2(ART - o.x), y: o.y, rot: -o.rot, r: o.r, color: o.color, color2: o.color2, flip: !o.flip, type: o.type }); if (o.follow) p.follow = { ...o.follow, t: -(o.follow.t || 0) }; else delete p.follow; }
+function mirrorInto(o, p) { Object.assign(p, { x: f2(ART - o.x), y: o.y, rot: -o.rot, r: o.r, color: o.color, color2: o.color2, style: o.style, flip: !o.flip, type: o.type }); if (o.follow) p.follow = { ...o.follow, t: -(o.follow.t || 0) }; else delete p.follow; }
 function syncOrns() { const done = new Set(), lead = curOrn();
   const order = lead ? [lead, ...S.ornaments.filter(x => x !== lead)] : S.ornaments;
   for (const o of order) { if (done.has(o.id)) continue; done.add(o.id); applyFollow(o); const p = partnerOf(o); if (p) { done.add(p.id); mirrorInto(o, p); } } }
@@ -547,7 +548,7 @@ function sanitize(raw) {
   const st = { name: typeof o.name === 'string' ? o.name.slice(0, 60) : '', bg: o.bg === 'color' ? 'color' : 'transparent', bgColor: o.bgColor || d.bgColor,
     shapes: Array.isArray(o.shapes) && o.shapes.length ? o.shapes.map((x, i) => Object.assign(newShape('Layer ' + (i + 1)), x, { base: Object.assign(baseDefaults(), x.base || {}) })) : [newShape('Layer 1', o.base)], swatches: Array.isArray(o.swatches) ? o.swatches : d.swatches,
     layers: Array.isArray(o.layers) ? o.layers.map(l => Object.assign(newLayer('', 'top'), l)) : d.layers,
-    ornaments: linkMirrors(Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)) : d.ornaments),
+    ornaments: linkMirrors(Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)).map(x => ({ ...x, style: x.style === 'line' ? 'line' : 'fill' })) : d.ornaments),
     images: (Array.isArray(o.images) ? o.images : []).filter(x => x && x.src).map((x, i) => Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (i + 1) }, x)),
     laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {} };
   for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart', 'aus', 'auss'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
@@ -595,6 +596,7 @@ document.querySelectorAll('[data-b]').forEach(el => {
     const [scope, key] = el.dataset.b.split('.'); const o = target(scope); if (!o) return;
     o[key] = el.type === 'checkbox' ? el.checked : (el.type === 'range' || el.type === 'number') ? parseFloat(el.value) : el.value;
     if (scope === 'layer' && key === 'text') fixSel();
+    if (scope === 'orn' && key === 'style') { const pr = partnerOf(o); if (pr) pr.style = o.style; }
     const out = el.nextElementSibling; if (out && out.tagName === 'OUTPUT') out.textContent = o[key];
     render(); if (scope === 'base' || scope === 'img') syncUI();
     if (el.tagName === 'SELECT' || el.type === 'checkbox') { syncUI(); commit(); }
@@ -610,7 +612,7 @@ act('delLayer', () => { S.layers = S.layers.filter(l => l.id !== sel.layer); });
 act('dupOpp', () => { const L = curLayer(); if (!L) return; const c = JSON.parse(JSON.stringify(L)); c.id = uid(); c.side = L.side === 'top' ? 'bottom' : 'top'; c.offset = -L.offset; S.layers.push(c); sel.layer = c.id; });
 act('resetLetter', () => { for (const s of sel.letters) { const L = S.layers.find(x => x.id === s.l); if (L) delete L.letters[s.i]; } });
 act('resetLetters', () => { const L = curLayer(); if (L) L.letters = {}; });
-const addOrn = type => { const o = { id: uid(), type, x: C, y: C, r: ORN_R[type] || 20, rot: 0, color: (type === 'holly1' || type === 'holly2') ? '#1f6b34' : SB().stroke, ...(type === 'holly1' || type === 'holly2' ? { color2: '#c0262d' } : {}) }; S.ornaments.push(o); sel.orn = o.id; };
+const addOrn = type => { const o = { id: uid(), type, style: 'fill', x: C, y: C, r: ORN_R[type] || 20, rot: 0, color: (type === 'holly1' || type === 'holly2') ? '#1f6b34' : SB().stroke, ...(type === 'holly1' || type === 'holly2' ? { color2: '#c0262d' } : {}) }; S.ornaments.push(o); sel.orn = o.id; };
 act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot')); act('addHolly1', () => addOrn('holly1')); act('addHolly2', () => addOrn('holly2')); act('addNote', () => addOrn('note')); act('addNotes', () => addOrn('notes'));
 act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), follow: o.follow ? { ...o.follow } : undefined }; if (Math.abs(o.x - C) < 1) o.x = C - 120; c.pair = o.id; o.pair = c.id; mirrorInto(o, c); S.ornaments.push(c); sel.orn = c.id; });
 act('delOrn', () => { const p = partnerOf(curOrn()); if (p) delete p.pair; S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
@@ -932,7 +934,8 @@ function laserItems() {
     if (b.inner) it.push({ key: pre + 'inner', part: 'inner', sh, name: nm + 'Inner line', def: 'etch' });
     if (b.fillOn) it.push({ key: pre + 'fill', part: 'fill', sh, name: nm + 'Shape fill', def: 'off' });
     for (const L of S.layers) if (L.text && shapeOf(L) === sh) it.push({ key: 't:' + L.id, sh, name: nm + 'Text: ' + L.text, def: 'etch' }); });
-  if (S.ornaments.length) it.push({ key: 'orn', name: 'Ornaments', def: 'etch' });
+  if (S.ornaments.length) { const nl = S.ornaments.filter(o => o.style === 'line').length, nf = S.ornaments.length - nl;
+    it.push({ key: 'orn', name: 'Ornaments' + (!nl ? ' (fill)' : !nf ? ' (line)' : ` (${nf} fill, ${nl} line)`), def: 'etch' }); }
   S.images.filter(im => im.src && im.visible !== false).forEach(im => it.push({ key: 'img:' + im.id, im, name: (im.name || 'Image') + (im.mode === 'trace' ? ' (trace)' : im.mode === 'sil' ? ' (silhouette)' : ''), def: im.mode === 'orig' ? 'image' : 'etch' }));
   const z = x => x.im ? (x.im.behind ? 0 : 2) : x.part === 'fill' && !x.sh.base.fillAbove ? 1 : x.part === 'fill' ? 3 : 4; // same stacking as the design
   return it.map((x, i) => [x, i]).sort((p, q) => z(p[0]) - z(q[0]) || p[1] - q[1]).map(p => p[0]);
@@ -955,7 +958,7 @@ function laserPart0(it, kind) {
     return w > 0 ? `<path d="${ringD(d0 + w)}${ringD(d0 - w)}" fill-rule="evenodd"${kind === 'pic' ? ` fill="${b.stroke}"` : ''}/>` : '';
   }
   if (k === 'fill') return `<path d="${ringD(0)}"${kind === 'pic' ? ` fill="${b.fill}"` : ''}/>`;
-  if (k === 'orn') return S.ornaments.map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' ? ` fill="${o.color}"` : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
+  if (k === 'orn') return S.ornaments.filter(o => !it.ornStyle || (o.style === 'line' ? 'line' : 'fill') === it.ornStyle).map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' ? ornPaint(o) : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
   if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? (L.style === 'hollow' ? ` fill="none" stroke="${L.color}" stroke-width="2.5"` : ` fill="${L.color}"`) : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
   if (k.startsWith('img:') && (it.im || S.images.find(i => 'img:' + i.id === k))) {
     const im = it.im || S.images.find(i => 'img:' + i.id === k), pr = procImage(im), vec = pr && pr.paths;
@@ -1054,14 +1057,14 @@ async function laserSteps() { await imgReady();
   if (!(W >= 5 && H >= 5)) throw new Error('Enter the size in mm.');
   const B = fileBase();
   const P = lzPage(W, H), hair = f2(0.1 * P.k), items = laserItems(), by = r => items.filter(it => roleOf(it) === r);
-  const imgItems = by('image'), etch = by('etch'), cin = by('cutin'), cout = by('cutout');
+  const imgItems = by('image'), etch = by('etch').flatMap(it => it.key !== 'orn' ? [it] : ['fill', 'line'].filter(y => S.ornaments.some(o => (o.style === 'line' ? 'line' : 'fill') === y)).map(y => ({ ...it, ornStyle: y }))), cin = by('cutin'), cout = by('cutout');
   if (!imgItems.length && !etch.length && !cin.length && !cout.length) throw new Error('Every part is set to Skip.');
   const mk = st => marks ? lzMarks(P, st) : '', st = [], lpm = Math.round(dpi / 25.4 * 10) / 10, sz = `${f2(W)}x${f2(H)}mm`;
   const nm = l => l.map(x => x.name.replace(/^.* – /, '')).join(', ');
   if (imgItems.length) st.push({ kind: 'ENGRAVE', what: 'photo', type: 'png', items: imgItems, mode: `Line To Line Tracing, ${lpm} lines/mm`,
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
     data: async () => pngDpi(await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"'), false, true), dpi) });
-  const isLine = it => it.key === 'orn' || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
+  const isLine = it => (it.key === 'orn' && it.ornStyle === 'line') || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
   const eLine = etch.filter(isLine), eFill = etch.filter(it => !isLine(it)), edpi = Math.min(Math.max(dpi * 2, 508), Math.floor(7900 * 25.4 / Math.max(W, H)));
   const what = l => [...new Set(l.map(x => x.key === 'orn' ? 'ornaments' : x.key.startsWith('img') ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+');
   const eAsPng = ($('lzEtch') ? $('lzEtch').value : 'png') !== 'svg', eBody = `<g fill="#000">${eFill.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"');
@@ -1072,7 +1075,7 @@ async function laserSteps() { await imgReady();
     warn: 'Solid filled letters/shapes, burned as tight lines. This burns HOTTER than the picture version at the same power - start well below 50% and use a fast speed.',
     data: async () => lzHatch(W, H, eBody, 'etch fill lines') });
   if (eLine.length) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', short: 'etch lines', type: 'svg', items: eLine, mode: 'Vector (SVG) smooth outlines - LaserGRBL takes the size from the file',
-    warn: 'Outline etch (hollow letters, ornaments). Etch power, 1 pass.',
+    warn: 'Outline etch (hollow letters, line ornaments). Etch power, 1 pass.',
     data: async () => lzVec(W, H, eLine.map(it => laserPart(it, 'fill')).join('') + mk(''), 'etch lines') });
   const cut = (list, kind, label, warn) => st.push({ kind: 'CUT', what: label, type: 'svg', items: list, mode: 'Vector (SVG) - LaserGRBL takes the size from the file', warn,
     data: async () => lzVec(W, H, list.map(it => laserPart(it, kind)).join('') + mk(''), 'cut ' + label) });
@@ -1161,9 +1164,9 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v29';
-const WHATS_NEW = 'What changed in v29 (laser): filled letters are a picture file (PNG) again, like before v26 — use Line To Line and type the same W/H/X 0/Y 0 as the photo. It has the 4 faint corner dots so it frames full-page and lines up with the cut. The line (SVG) version is still there: Laser panel > "Letter etch file". Nothing else in the laser files changed.';
-$('homeNews') && ($('homeNews').textContent = WHATS_NEW); $('updNews') && ($('updNews').textContent = 'v29: letters back to picture (Line To Line) by default.');
+const APP_VERSION = 'v30';
+const WHATS_NEW = 'What changed in v30 (laser): ornaments now have Fill or Line (Ornaments panel, Fill is the default). Filled ornaments burn in the same etch fill file as filled letters (2 etch fill.png, or the lines SVG if you chose that). Line ornaments burn in the etch lines SVG with hollow letters. Before v30 all ornaments went in the etch lines SVG. Nothing else in the laser files changed.';
+$('homeNews') && ($('homeNews').textContent = WHATS_NEW); $('updNews') && ($('updNews').textContent = 'v30: ornaments Fill/Line - filled ornaments now burn with filled letters.');
 $('homeVer').textContent = 'Wayland Forge ' + APP_VERSION;
 $('updBtn').onclick = () => location.reload();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {
