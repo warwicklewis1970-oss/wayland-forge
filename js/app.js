@@ -1055,7 +1055,7 @@ async function laserSteps() { await imgReady();
   if (!imgItems.length && !etch.length && !cin.length && !cout.length) throw new Error('Every part is set to Skip.');
   const mk = st => marks ? lzMarks(P, st) : '', st = [], lpm = Math.round(dpi / 25.4 * 10) / 10, sz = `${f2(W)}x${f2(H)}mm`;
   const nm = l => l.map(x => x.name.replace(/^.* – /, '')).join(', ');
-  if (imgItems.length) st.push({ kind: 'ENGRAVE', what: 'photo', type: 'png', items: imgItems, mode: `Line To Line Tracing, ${lpm} lines/mm (or 1bit BW Dithering)`,
+  if (imgItems.length) st.push({ kind: 'ENGRAVE', what: 'photo', type: 'png', items: imgItems, mode: `Line To Line Tracing, ${lpm} lines/mm`,
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
     data: async () => pngDpi(await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"')), dpi) });
   const isLine = it => it.key === 'orn' || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
@@ -1089,7 +1089,7 @@ async function laserPack(asZip) {
 function lzStepText(s) {
   const L = [`STEP ${s.n}: ${s.kind} ${s.what}`, `  File: ${s.file}`];
   if (s.type === 'png') L.push(`  Photo picture, ${f2(s.W)} x ${f2(s.H)} mm (${s.px[0]} x ${s.px[1]} px at ${s.dpi} DPI).`,
-    `  LaserGRBL: File > Open File > pick it > choose Dithering (or Line To Line) > Next.`,
+    `  LaserGRBL: File > Open File > pick it > choose Line To Line Tracing > Next.`,
     `  In "Target image": tick Autosize, press the DPI button, type 0 in both Offset boxes (X 0, Y 0).`,
     `  W must read ${f2(s.W)}, H ${f2(s.H)}. Then set speed and S-MAX > Create!`,
     `  (This is the ONLY file that has size and offset boxes. Do the photo FIRST so you can check them before anything burns.)`);
@@ -1116,7 +1116,7 @@ function lzStepsUI(st) {
     const url = URL.createObjectURL(new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' })); s.url = url;
     return `<div class="lzstep"><img src="${url}" alt="Step ${s.n} preview"><div><b>${s.n}. ${esc(s.kind)} ${esc(s.what)}</b><div class="dim">${esc(s.file)}</div>
       <div>${f2(s.W)} × ${f2(s.H)} mm${s.px ? ` · ${s.px[0]}×${s.px[1]} px @ ${s.dpi} DPI` : ''}</div>
-      <div class="dim">${s.type === 'png' ? `Dithering → Next. Tick Autosize, press DPI, Offset X 0 and Y 0 → W ${f2(s.W)}, H ${f2(s.H)}, X 0, Y 0. Speed, S-MAX, Create!` : 'Open → speed and S-MAX → Create! Lines up by itself.'}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
+      <div class="dim">${s.type === 'png' ? `Line To Line Tracing → Next. Tick Autosize, press DPI, Offset X 0 and Y 0 → W ${f2(s.W)}, H ${f2(s.H)}, X 0, Y 0. Speed, S-MAX, Create!` : 'Open → speed and S-MAX → Create! Lines up by itself.'}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
       <label class="dim">Your settings <input data-lzset="${i}" placeholder="speed / power / passes"></label>
       <button data-lzdl="${i}">⬇ Download step ${s.n} only</button></div></div>`; }).join('');
   box.hidden = false;
@@ -1150,7 +1150,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v26';
+const APP_VERSION = 'v27';
 $('homeVer').textContent = 'Wayland Forge ' + APP_VERSION;
 $('updBtn').onclick = () => location.reload();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {
