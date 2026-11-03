@@ -1015,19 +1015,19 @@ async function lzGcode(W, H, dpi, body, crisp, mask, F, pct, smax, title) {
     if (n < d.length / 4) for (let p = 0; p < d.length; p += 4) if (m[p] > 127) d[p] = 255; }
   const mm = 25.4 / dpi, R = v => (Math.round(v * 1000) / 1000).toString(), Smax = Math.round(smax * pct / 100), gap = Math.max(2, Math.round(2 / mm));
   const S = g => g >= 250 ? 0 : crisp ? Smax : Math.round(Smax * (255 - g) / 255);
-  const L = [`; Wayland Forge - ${title}`, `; Line To Line, ${Math.round(10 / mm) / 10} lines/mm, page ${f2(W)} x ${f2(H)} mm, origin = bottom-left corner (laser 0,0)`,
-    `; Speed F${F}, power ${pct}% (S${Smax} of max S${smax}). Adjust in LaserGRBL with the S and G1 override buttons.`, 'G90', 'G21', `G0 X0 Y0 F${F}`, 'M4 S0'];
+  const cx = v => R(Math.min(W, Math.max(0, v))), cy = v => R(Math.min(H, Math.max(0, v))); // never below 0 or past the page (soft limits)
+  const L = [`; Wayland Forge ${String(title).replace(/[^\w .-]/g, '').slice(0, 30)}`, `; F${F} S${Smax} of ${smax}`, 'G90', 'G21', 'M5', 'G0 X0 Y0', 'M4 S0'];
   let n = 0, x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   for (let r = ph - 1; r >= 0; r--) { const segs = []; let st = -1, sv = 0; // runs of equal power on this row
     for (let x = 0; x <= pw; x++) { const v = x < pw ? S(d[(r * pw + x) * 4]) : -1; if (st < 0) { st = x; sv = v; } else if (v !== sv) { segs.push([st, x, sv]); st = x; sv = v; } }
     while (segs.length && segs[0][2] === 0) segs.shift(); while (segs.length && segs[segs.length - 1][2] === 0) segs.pop();
-    if (!segs.length) continue; const fwd = n % 2 === 0, y = R((ph - 1 - r + 0.5) * mm); n++;
+    if (!segs.length) continue; const fwd = n % 2 === 0, y = cy((ph - 1 - r + 0.5) * mm); n++;
     const yy = +y; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy;
     const order = fwd ? segs : segs.slice().reverse(), sx = fwd ? order[0][0] : order[0][1];
-    L.push(`G0 X${R(sx * mm)} Y${y} S0`); if (n === 1) L.push(`G1 F${F}`);
-    for (const [a, b, v] of order) { const ex = (fwd ? b : a) * mm; if (fwd) { if (a * mm < x0) x0 = a * mm; if (b * mm > x1) x1 = b * mm; } else { if (a * mm < x0) x0 = a * mm; if (b * mm > x1) x1 = b * mm; }
-      L.push(v === 0 && b - a >= gap ? `G0 X${R(ex)} S0` : `G1 X${R(ex)} S${v}`); } }
-  L.push('M5 S0', 'G0 X0 Y0', `; burn area X ${R(x0)}..${R(x1)}  Y ${R(y0)}..${R(y1)} mm`);
+    L.push(`G0 X${cx(sx * mm)} Y${y} S0`); let first = n === 1;
+    for (const [a, b, v] of order) { const ex = (fwd ? b : a) * mm; if (a * mm < x0) x0 = a * mm; if (b * mm > x1) x1 = b * mm;
+      if (v === 0 && b - a >= gap) L.push(`G0 X${cx(ex)} S0`); else { L.push(`G1 X${cx(ex)} S${v}${first ? ` F${F}` : ''}`); first = false; } } }
+  L.push('M5', 'G0 X0 Y0', `; area X${R(x0)}-${R(x1)} Y${R(y0)}-${R(y1)}`);
   return L.join('\n') + '\n';
 }
 async function lzPNG(W, H, dpi, body, crisp, reg, out, mask) { const { cv, id, pw, ph } = await lzRaster(W, H, dpi, body, crisp, reg);
@@ -1211,8 +1211,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v34';
-const WHATS_NEW = 'v34: no laser file changes (this note is now a small bar you can close). What changed in v33 (laser): 1) The photo and filled-letter steps are now G-code files (.nc) instead of PNG pictures. In LaserGRBL: File > Open File > pick it > Start. No picture box opens, so there is no size, offset or Autosize to set, and it lines up with the cut by itself. 2) Speed and power for those two steps are set in the app Laser panel (Photo speed/power, Letter speed/power, starting at 3000 and 50%) and written into the file; the numbers are in the file name. To fine-tune at the laser, use the S (power) and G1 (speed) buttons in LaserGRBL\'s bottom bar. 3) Laser max S ($30) box, default 1000: power % is worked out from it. 4) The old PNG files are still there: set Picture steps as to PNG. SVG files (outline etch and cuts) are unchanged.';
+const APP_VERSION = 'v35';
+const WHATS_NEW = 'v35 (laser): the photo and filled-letter .nc files now match LaserGRBL\'s own G-code: short lines only (the long note lines at the top were longer than the laser board accepts), laser off (M5) at the start, speed on the first burn line, and every position kept at 0 or more and inside the page. Size, position, speed and power are unchanged. Export again before you burn. If LaserGRBL shows MachineAlarm: press OK, then the padlock (Unlock) button, or Home first if your laser has homing. v34: no laser file changes (this note is now a small bar you can close). What changed in v33 (laser): 1) The photo and filled-letter steps are now G-code files (.nc) instead of PNG pictures. In LaserGRBL: File > Open File > pick it > Start. No picture box opens, so there is no size, offset or Autosize to set, and it lines up with the cut by itself. 2) Speed and power for those two steps are set in the app Laser panel (Photo speed/power, Letter speed/power, starting at 3000 and 50%) and written into the file; the numbers are in the file name. To fine-tune at the laser, use the S (power) and G1 (speed) buttons in LaserGRBL\'s bottom bar. 3) Laser max S ($30) box, default 1000: power % is worked out from it. 4) The old PNG files are still there: set Picture steps as to PNG. SVG files (outline etch and cuts) are unchanged.';
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
