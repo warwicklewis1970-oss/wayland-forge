@@ -1004,9 +1004,9 @@ async function lzHatch(W, H, body, title, gap) { gap = gap || 0.1; const pxmm = 
     rows.push(segs.map(([a, b]) => r % 2 ? `M${R(b / pxmm)} ${yy}L${R(a / pxmm)} ${yy}` : `M${R(a / pxmm)} ${yy}L${R(b / pxmm)} ${yy}`).join('')); }
   const paths = []; for (let i = 0; i < rows.length; i += 40) paths.push(`<path d="${rows.slice(i, i + 40).join('')}"/>`);
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${f2(W)}mm" height="${f2(H)}mm" viewBox="0 0 ${f2(W)} ${f2(H)}">\n<title>${esc(title)}</title>\n<g fill="none" stroke="#000" stroke-width="0.1">\n${paths.join('\n')}\n</g>\n</svg>\n`; }
-async function lzPNG(W, H, dpi, body, crisp) { const { cv } = await lzRaster(W, H, dpi, body, crisp);
+async function lzPNG(W, H, dpi, body, crisp, reg) { const { cv } = await lzRaster(W, H, dpi, body, crisp, reg);
   return new Uint8Array(await (await new Promise(r => cv.toBlob(r, 'image/png'))).arrayBuffer()); }
-async function lzRaster(W, H, dpi, body, crisp) { // greyscale-looking PNG on white, full page size (LaserGRBL uses the whole image)
+async function lzRaster(W, H, dpi, body, crisp, reg) { // greyscale-looking PNG on white, full page size (LaserGRBL uses the whole image)
   const pw = Math.round(W / 25.4 * dpi), ph = Math.round(H / 25.4 * dpi);
   if (Math.max(pw, ph) > 8000) throw new Error('Laser image too big: lower the size or detail.');
   const P = lzPage(W, H), svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${pw}" height="${ph}" viewBox="${f2(P.vx)} ${f2(P.vy)} ${f2(P.vw)} ${f2(P.vh)}">${body}</svg>`;
@@ -1016,6 +1016,9 @@ async function lzRaster(W, H, dpi, body, crisp) { // greyscale-looking PNG on wh
   cx.fillStyle = '#fff'; cx.fillRect(0, 0, pw, ph); cx.drawImage(img, 0, 0, pw, ph); URL.revokeObjectURL(url);
   const id = cx.getImageData(0, 0, pw, ph), d = id.data;
   for (let p = 0; p < d.length; p += 4) { const g = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]); d[p] = d[p + 1] = d[p + 2] = crisp ? (g < 128 ? 0 : 255) : g; d[p + 3] = 255; }
+  if (reg) { // registration dots: 0.3 mm light-grey squares in all 4 page corners, so LaserGRBL's burn area (and Frame) is the FULL page, matching the SVG steps
+    const q = Math.max(3, Math.round(0.3 / 25.4 * dpi)), G = 200;
+    for (const [x0, y0] of [[0, 0], [pw - q, 0], [0, ph - q], [pw - q, ph - q]]) for (let y = y0; y < y0 + q; y++) for (let x = x0; x < x0 + q; x++) { const p = (y * pw + x) * 4; if (d[p] > G) d[p] = d[p + 1] = d[p + 2] = G; } }
   cx.putImageData(id, 0, 0);
   return { cv, id, pw, ph };
 }
@@ -1057,7 +1060,7 @@ async function laserSteps() { await imgReady();
   const nm = l => l.map(x => x.name.replace(/^.* – /, '')).join(', ');
   if (imgItems.length) st.push({ kind: 'ENGRAVE', what: 'photo', type: 'png', items: imgItems, mode: `Line To Line Tracing, ${lpm} lines/mm`,
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
-    data: async () => pngDpi(await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"')), dpi) });
+    data: async () => pngDpi(await lzPNG(W, H, dpi, imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"'), false, true), dpi) });
   const isLine = it => it.key === 'orn' || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
   const eLine = etch.filter(isLine), eFill = etch.filter(it => !isLine(it)), edpi = Math.min(Math.max(dpi * 2, 508), Math.floor(7900 * 25.4 / Math.max(W, H)));
   const what = l => [...new Set(l.map(x => x.key === 'orn' ? 'ornaments' : x.key.startsWith('img') ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+');
@@ -1090,8 +1093,10 @@ function lzStepText(s) {
   const L = [`STEP ${s.n}: ${s.kind} ${s.what}`, `  File: ${s.file}`];
   if (s.type === 'png') L.push(`  Photo picture, ${f2(s.W)} x ${f2(s.H)} mm (${s.px[0]} x ${s.px[1]} px at ${s.dpi} DPI).`,
     `  LaserGRBL: File > Open File > pick it > choose Line To Line Tracing > Next.`,
-    `  In "Target image": tick Autosize, press the DPI button, type 0 in both Offset boxes (X 0, Y 0).`,
-    `  W must read ${f2(s.W)}, H ${f2(s.H)}. Then set speed and S-MAX > Create!`,
+    `  In "Target image": leave Autosize UNTICKED (ignore the DPI box and button). Type exactly:`,
+    `     Size  W ${f2(s.W)}   H ${f2(s.H)}      Offset  X 0   Y 0`,
+    `  Then set speed and S-MAX > Create!`,
+    `  The file has 4 faint 0.3 mm dots in the page corners so Frame shows the FULL ${f2(s.W)} x ${f2(s.H)} mm page (Frame only traces what burns).`,
     `  (This is the ONLY file that has size and offset boxes. Do the photo FIRST so you can check them before anything burns.)`);
   else L.push(`  LaserGRBL: File > Open File > pick it > set speed and S-MAX > Create!  Nothing else to set - it lines up by itself.`);
   L.push(`  ${s.warn}`, `  Your settings:  speed ________  S-MAX ________  passes ____  result ______________`, ``);
@@ -1112,11 +1117,11 @@ function lzStepsUI(st) {
   const s0 = st[0];
   box.innerHTML = `<b>Laser steps</b> <span class="dim">— run in order, one file at a time</span>
     <div class="lzhow">Files go to your <b>Downloads</b> folder. In LaserGRBL: <b>File &gt; Open File</b>, click <b>Downloads</b> on the left, pick the next file.
-    Every file is the same ${f2(s0.W)} × ${f2(s0.H)} mm page and lines up by itself. Don't move the wood between files. For each file just set <b>speed</b> and <b>power</b>, then <b>Create!</b>${st.some(x => x.type === 'png') ? ' Only the photo has size boxes: tick Autosize, press DPI, type 0 in both Offset boxes.' : ''}</div>` + st.map((s, i) => {
+    Every file is the same ${f2(s0.W)} × ${f2(s0.H)} mm page and lines up by itself. Don't move the wood between files. For each file just set <b>speed</b> and <b>power</b>, then <b>Create!</b>${st.some(x => x.type === 'png') ? ` Only the photo has size boxes: leave Autosize unticked and type <b>W ${f2(s0.W)} · H ${f2(s0.H)} · X 0 · Y 0</b>.` : ''}</div>` + st.map((s, i) => {
     const url = URL.createObjectURL(new Blob([s.bytes], { type: s.type === 'png' ? 'image/png' : 'image/svg+xml' })); s.url = url;
     return `<div class="lzstep"><img src="${url}" alt="Step ${s.n} preview"><div><b>${s.n}. ${esc(s.kind)} ${esc(s.what)}</b><div class="dim">${esc(s.file)}</div>
       <div>${f2(s.W)} × ${f2(s.H)} mm${s.px ? ` · ${s.px[0]}×${s.px[1]} px @ ${s.dpi} DPI` : ''}</div>
-      <div class="dim">${s.type === 'png' ? `Line To Line Tracing → Next. Tick Autosize, press DPI, Offset X 0 and Y 0 → W ${f2(s.W)}, H ${f2(s.H)}, X 0, Y 0. Speed, S-MAX, Create!` : 'Open → speed and S-MAX → Create! Lines up by itself.'}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
+      <div class="${s.type === 'png' ? 'lzdo' : 'dim'}">${s.type === 'png' ? `Line To Line Tracing → Next. Leave <b>Autosize unticked</b> (ignore DPI). Type: <b class="lzval">W ${f2(s.W)} &nbsp; H ${f2(s.H)} &nbsp; X 0 &nbsp; Y 0</b>. Speed, S-MAX, Create! Frame shows the full page thanks to 4 faint corner dots.` : 'Open → speed and S-MAX → Create! Lines up by itself.'}</div><div class="${s.kind === 'ENGRAVE' ? 'lzwarn' : 'dim'}">${esc(s.warn)}</div>
       <label class="dim">Your settings <input data-lzset="${i}" placeholder="speed / power / passes"></label>
       <button data-lzdl="${i}">⬇ Download step ${s.n} only</button></div></div>`; }).join('');
   box.hidden = false;
@@ -1150,7 +1155,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v27';
+const APP_VERSION = 'v28';
 $('homeVer').textContent = 'Wayland Forge ' + APP_VERSION;
 $('updBtn').onclick = () => location.reload();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {
