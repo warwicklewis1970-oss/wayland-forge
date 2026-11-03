@@ -198,6 +198,15 @@
         <label><span>Detail</span><select id="lzDpi"><option value="127">5 lines/mm</option><option value="254">10 lines/mm</option><option value="318" selected>12.5 lines/mm</option><option value="400">16 lines/mm</option></select></label>
       </div>
       <label><span>Letter etch file</span><select id="lzEtch"><option value="png" selected>Picture (Line To Line, default)</option><option value="svg">Lines (SVG)</option></select></label>
+      <label><span>Picture steps as</span><select id="lzPic"><option value="nc" selected>Ready-to-run G-code (.nc) – open and Start</option><option value="png">PNG picture (type W H X Y in LaserGRBL)</option></select></label>
+      <div class="g3" id="lzPicSet">
+        <label><span>Photo speed</span><input type="number" id="lzPhF" value="3000" min="100" max="20000" step="100"></label>
+        <label><span>Photo power %</span><input type="number" id="lzPhS" value="50" min="1" max="100" step="1"></label>
+        <label><span>Letter speed</span><input type="number" id="lzEfF" value="3000" min="100" max="20000" step="100"></label>
+        <label><span>Letter power %</span><input type="number" id="lzEfS" value="50" min="1" max="100" step="1"></label>
+        <label><span>Laser max S ($30)</span><input type="number" id="lzSmax" value="1000" min="1" max="100000" step="1"></label>
+      </div>
+      <div class="hint">G-code picture steps: speed and power are set here and written into the file. Fine-tune in LaserGRBL with the <b>S [1.00x]</b> (power) and <b>G1 [1.00x]</b> (speed) buttons in the bottom bar.</div>
       <label class="chk"><input type="checkbox" id="lzMarks">Tiny corner marks in every file <span class="dim">(only if LaserGRBL moves files)</span></label>
       <button id="laserBtn" class="accent wide">⬇ Download all steps (separate files)</button>
       <button id="laserZip" class="wide">Or download as one .zip</button>
