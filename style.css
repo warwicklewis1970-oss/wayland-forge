@@ -165,3 +165,4 @@ button.mini{padding:1px 7px;font-size:11px;margin-left:6px}
 
 .lzburn table.lzbt{width:100%;border-collapse:collapse;font-size:13px}.lzbt td,.lzbt th{padding:2px 3px;text-align:left}.lzbt input{width:100%;min-width:52px}.lzbbtn{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}.lzunt{background:#ffe9a8;color:#7a4b00;border-radius:4px;padding:0 4px;font-size:11px}.lzcb{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px}.lzcb label{display:flex;gap:3px;align-items:center}.lzcb input{width:72px!important}.lzcb .dim{flex-basis:100%}
 .lzdlg{max-width:min(560px,96vw);border:1px solid #8886;border-radius:10px;padding:12px}.lzdlg::backdrop{background:#0006}.lzdlg h3{margin:0 0 8px}
+.lzcb select{width:auto!important}

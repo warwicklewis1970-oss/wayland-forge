@@ -1019,10 +1019,11 @@ function lzVecG(W, H, body, title, F, pct, smax, passes) { const ds = lzFlat(W, 
   L.push('M5', 'G0 X0 Y0'); return L.join('\n') + '\n'; }
 // Line To Line G-code, same style as LaserGRBL's own (M4 dynamic power, horizontal zig-zag rows, G0 over white), in true page mm
 // with the page's bottom-left corner at 0,0 - the same origin LaserGRBL uses for the SVG steps, so nothing to size or offset.
-async function lzGcode(W, H, dpi, body, crisp, mask, F, pct, smax, title) {
+async function lzGcode(W, H, dpi, body, crisp, mask, F, pct, smax, title, dith) {
   const { id, pw, ph } = await lzRaster(W, H, dpi, body, crisp), d = id.data;
   if (mask) { const m = (await lzRaster(W, H, dpi, mask, true)).id.data; let n = 0; for (let p = 0; p < d.length; p += 4) if (m[p] > 127) n++;
     if (n < d.length / 4) for (let p = 0; p < d.length; p += 4) if (m[p] > 127) d[p] = 255; }
+  if (dith) { lzDither(d, pw, ph); crisp = true; }
   const mm = 25.4 / dpi, R = v => (Math.round(v * 1000) / 1000).toString(), Smax = Math.round(smax * pct / 100), gap = Math.max(2, Math.round(2 / mm));
   const S = g => g >= 250 ? 0 : crisp ? Smax : Math.round(Smax * (255 - g) / 255);
   const cx = v => R(Math.min(W, Math.max(0, v))), cy = v => R(Math.min(H, Math.max(0, v))); // never below 0 or past the page (soft limits)
@@ -1040,6 +1041,20 @@ async function lzGcode(W, H, dpi, body, crisp, mask, F, pct, smax, title) {
   L.push('M5', 'G0 X0 Y0', `; area X${R(x0)}-${R(x1)} Y${R(y0)}-${R(y1)}`);
   return L.join('\n') + '\n';
 }
+// Floyd-Steinberg 1-bit dither in place (red channel = grey); afterwards every pixel is 0 or 255.
+function lzDither(d, pw, ph) { const g = new Float32Array(pw * ph); for (let i = 0; i < g.length; i++) g[i] = d[i * 4];
+  for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) { const i = y * pw + x, o = g[i], nv = o < 128 ? 0 : 255, e = o - nv; g[i] = nv;
+    if (x + 1 < pw) g[i + 1] += e * 7 / 16; if (y + 1 < ph) { if (x > 0) g[i + pw - 1] += e * 3 / 16; g[i + pw] += e * 5 / 16; if (x + 1 < pw) g[i + pw + 1] += e / 16; } }
+  for (let i = 0; i < g.length; i++) d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = g[i]; }
+// Vector mode for raster steps: threshold the picture (outside the outer cut whitened), trace dark areas to outlines, burn them as G-code paths.
+async function lzTraceG(W, H, body, mask, F, pct, smax, title) { const tdpi = Math.min(254, Math.floor(2400 * 25.4 / Math.max(W, H)));
+  const { id, pw, ph } = await lzRaster(W, H, tdpi, body, true), d = id.data;
+  if (mask) { const m = (await lzRaster(W, H, tdpi, mask, true)).id.data; let n = 0; for (let p = 0; p < d.length; p += 4) if (m[p] > 127) n++;
+    if (n < d.length / 4) for (let p = 0; p < d.length; p += 4) if (m[p] > 127) d[p] = d[p + 1] = d[p + 2] = 255; }
+  const svg = ImageTracer.imagedataToSVG(id, { pal: [{ r: 0, g: 0, b: 0, a: 255 }, { r: 255, g: 255, b: 255, a: 255 }], numberofcolors: 2, colorquantcycles: 1, ltres: 0.5, qtres: 0.5, pathomit: 6, blurradius: 0, strokewidth: 0, roundcoords: 1, linefilter: true });
+  const paths = []; svg.replace(/<path[^>]*fill="rgb\(0,0,0\)"[^>]*\sd="([^"]+)"/g, (_, dd) => paths.push(dd.trim()));
+  const P = lzPage(W, H), k = P.vw / pw;
+  return lzVecG(W, H, `<g transform="translate(${P.vx} ${P.vy}) scale(${k})">${paths.map(q => `<path d="${q}"/>`).join('')}</g>`, title, F, pct, smax, 1); }
 async function lzPNG(W, H, dpi, body, crisp, reg, out, mask) { const { cv, id, pw, ph } = await lzRaster(W, H, dpi, body, crisp, reg);
   let c = cv;
   if (mask) { // nothing outside the outer cut can end up on the piece: whiten it, so a full-page photo/map can't blow the frame up to the whole page
@@ -1109,11 +1124,13 @@ async function laserSteps() { await imgReady();
   const nm = l => l.map(x => x.name.replace(/^.* – /, '')).join(', ');
   const cPh = {}, cEf = {}, cMask = cout.length ? `<g fill="#000" stroke="none">${cout.map(it => laserPart(it, 'cutout')).join('')}</g>` : null;
   const nc = ($('lzPic') ? $('lzPic').value : 'nc') !== 'png', num = (id, d) => { const v = +($(id) || {}).value; return v > 0 ? v : d; }, smax = num('lzSmax', 1000);
-  const bz = lzBurnOf, ph = bz('photo'), ef = bz('fill'), phF = ph.F, phS = ph.P, efF = ef.F, efS = ef.P, mt = lzMatTag();
+  const bz = lzBurnOf, ph = bz('photo'), ef = bz('fill'), phF = ph.F, phS = ph.P, efF = ef.F, efS = ef.P;
+  const MN = { ltl: 'Line To Line', dith: 'Dithering', vec: 'Vector (traced outlines)' };
+  const rasG = (b, body, crisp, title) => b.mode === 'vec' ? lzTraceG(W, H, body, cMask, b.F, b.P, smax, title) : lzGcode(W, H, dpi, body, crisp && b.mode !== 'dith', cMask, b.F, b.P, smax, title, b.mode === 'dith');
   const phBody = () => imgItems.map(it => laserPart(it, 'pic')).join('') + mk(' fill="#000"');
-  if (imgItems.length && nc) st.push({ kind: 'ENGRAVE', what: 'photo', job: 'photo', short: `photo ${mt} F${phF} P${phS}`, type: 'nc', items: imgItems, mode: `G-code, Line To Line, ${lpm} lines/mm, speed ${phF}, power ${phS}%`,
+  if (imgItems.length && nc) st.push({ kind: 'ENGRAVE', what: 'photo', job: 'photo', short: `photo ${lzTagOf('photo', ph)}`, type: 'nc', items: imgItems, mode: `G-code, ${MN[ph.mode]}${ph.mode === 'vec' ? '' : `, ${lpm} lines/mm`}, speed ${phF}, power ${phS}%`,
     warn: `Speed ${phF} and power ${phS}% are written into this file (change them in the app and export again, or use LaserGRBL's S and G1 override buttons).`,
-    data: async () => lzGcode(W, H, dpi, phBody(), false, cMask, phF, phS, smax, 'photo') });
+    data: async () => rasG(ph, phBody(), false, 'photo') });
   if (imgItems.length && !nc) st.push({ kind: 'ENGRAVE', job: 'photo', what: 'photo', type: 'png', items: imgItems, crop: cPh, mode: `Line To Line Tracing, ${lpm} lines/mm`,
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
     data: async () => pngDpi(await lzPNG(W, H, dpi, phBody(), false, false, cPh, cMask), dpi) });
@@ -1121,9 +1138,9 @@ async function laserSteps() { await imgReady();
   const eLine = etch.filter(isLine), eFill = etch.filter(it => !isLine(it)), edpi = Math.min(Math.max(dpi * 2, 508), Math.floor(7900 * 25.4 / Math.max(W, H)));
   const what = l => [...new Set(l.map(x => x.key === 'orn' ? 'ornaments' : x.key.startsWith('img') ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+');
   const eAsPng = ($('lzEtch') ? $('lzEtch').value : 'png') !== 'svg', eBody = `<g fill="#000">${eFill.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"');
-  if (eFill.length && eAsPng && nc) st.push({ kind: 'ETCH', what: what(eFill), job: 'fill', short: `etch fill ${mt} F${efF} P${efS}`, type: 'nc', items: eFill, mode: `G-code, Line To Line, ${lpm} lines/mm, pure black and white, speed ${efF}, power ${efS}%`,
-    warn: `Speed ${efF} and power ${efS}% are written into this file (material: ${lzMatName()}). Fine-tune with LaserGRBL's S and G1 override buttons.`,
-    data: async () => lzGcode(W, H, dpi, eBody, true, cMask, efF, efS, smax, 'etch fill') });
+  if (eFill.length && eAsPng && nc) st.push({ kind: 'ETCH', what: what(eFill), job: 'fill', short: `etch fill ${lzTagOf('fill', ef)}`, type: 'nc', items: eFill, mode: `G-code, ${ef.mode === 'vec' ? 'Vector outlines of the filled shapes' : `${MN[ef.mode]}, ${lpm} lines/mm`}, speed ${efF}, power ${efS}%`,
+    warn: `Speed ${efF} and power ${efS}% are written into this file . Fine-tune with LaserGRBL's S and G1 override buttons.`,
+    data: async () => ef.mode === 'vec' ? lzVecG(W, H, eBody, 'etch fill', efF, efS, smax, 1) : lzGcode(W, H, dpi, eBody, ef.mode !== 'dith', cMask, efF, efS, smax, 'etch fill', ef.mode === 'dith') });
   if (eFill.length && eAsPng && !nc) st.push({ kind: 'ETCH', what: what(eFill), job: 'fill', short: 'etch fill', type: 'png', items: eFill, crop: cEf, mode: `Picture, Line To Line Tracing, ${lpm} lines/mm, pure black and white`,
     warn: 'Solid filled letters/shapes as a black-and-white picture. Use Line To Line. Normal etch power (you found 50% / speed 3000 good on 4 mm beech ply).',
     data: async () => pngDpi(await lzPNG(W, H, dpi, eBody, true, false, cEf, cMask), dpi) });
@@ -1131,68 +1148,56 @@ async function laserSteps() { await imgReady();
     warn: 'Solid filled letters/shapes, burned as tight lines. This burns HOTTER than the picture version at the same power - start well below 50% and use a fast speed.',
     data: async () => lzHatch(W, H, eBody, 'etch fill lines') });
   const lnc = ($('lzLine') ? $('lzLine').value : 'nc') !== 'svg', lb = bz('lines'), ci = bz('cin'), co = bz('cout');
-  if (eLine.length && lnc) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', job: 'lines', short: `etch lines ${mt} F${lb.F} P${lb.P}`, type: 'nc', items: eLine, mode: `G-code outlines, speed ${lb.F}, power ${lb.P}%`,
+  if (eLine.length && lnc) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', job: 'lines', short: `etch lines ${lzTagOf('lines', lb)}`, type: 'nc', items: eLine, mode: `G-code outlines, speed ${lb.F}, power ${lb.P}%`,
     warn: 'Outline etch (hollow letters, line ornaments). Speed and power are in the file.',
     data: async () => lzVecG(W, H, eLine.map(it => laserPart(it, 'fill')).join('') + mk(''), 'etch lines', lb.F, lb.P, smax, 1) });
   if (eLine.length && !lnc) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', job: 'lines', short: 'etch lines', type: 'svg', items: eLine, mode: 'Vector (SVG) smooth outlines - LaserGRBL takes the size from the file',
     warn: 'Outline etch (hollow letters, line ornaments). Etch power, 1 pass.',
     data: async () => lzVec(W, H, eLine.map(it => laserPart(it, 'fill')).join('') + mk(''), 'etch lines') });
   const cut = (list, kind, label, warn) => { const b = label === 'inside' ? ci : co, job = label === 'inside' ? 'cin' : 'cout';
-    if (lnc) st.push({ kind: 'CUT', job, what: label, short: `cut ${label} ${mt} F${b.F} P${b.P}${b.passes > 1 ? ` x${b.passes}` : ''}`, type: 'nc', items: list, mode: `G-code cut, speed ${b.F}, power ${b.P}%, ${b.passes} pass${b.passes > 1 ? 'es' : ''}`, warn,
+    if (lnc) st.push({ kind: 'CUT', job, what: label, short: `cut ${label} ${lzTagOf(job, b)}`, type: 'nc', items: list, mode: `G-code cut, speed ${b.F}, power ${b.P}%, ${b.passes} pass${b.passes > 1 ? 'es' : ''}`, warn,
       data: async () => lzVecG(W, H, list.map(it => laserPart(it, kind)).join('') + mk(''), 'cut ' + label, b.F, b.P, smax, b.passes) });
     else st.push({ kind: 'CUT', job, what: label, type: 'svg', items: list, mode: 'Vector (SVG) - LaserGRBL takes the size from the file', warn,
       data: async () => lzVec(W, H, list.map(it => laserPart(it, kind)).join('') + mk(''), 'cut ' + label) }); };
   if (cin.length) cut(cin, 'cutin', 'inside', 'Cutting. Passes are built into the .nc file.');
   if (cout.length) cut(cout, 'cutout', 'outside', 'Always LAST - the piece is free after this.');
   st.forEach((s, i) => { s.n = i + 1; s.W = W; s.H = H; s.dpi = s.dpi || dpi; s.px = s.type === 'png' ? [Math.round(W / 25.4 * s.dpi), Math.round(H / 25.4 * s.dpi)] : null;
-    s.short = s.short || (s.kind === 'ENGRAVE' ? 'photo' : 'cut ' + s.what); s.b = bz(s.job); if (s.type !== 'nc') s.short += ` ${mt} F${s.b.F} P${s.b.P}` + (s.kind === 'CUT' && s.b.passes > 1 ? ` x${s.b.passes}` : ''); s.file = `${B} ${s.n} ${s.short}.${s.type}`; });
+    s.short = s.short || (s.kind === 'ENGRAVE' ? 'photo' : 'cut ' + s.what); s.b = bz(s.job); if (s.type !== 'nc') s.short += ' ' + lzTagOf(s.job, s.b); s.file = `${B} ${s.n} ${s.short}.${s.type}`; });
   return st;
 }
-// ---------- material presets (burn settings; the app controls alignment, the user controls burn) ----------
+// ---------- burn settings: mode, power, speed (+ passes for cuts) per step type; the app controls alignment, the user controls burn ----------
 const LZ_JOBS = [['photo', 'Photo'], ['fill', 'Etch fill'], ['lines', 'Etch lines'], ['cin', 'Cut inside'], ['cout', 'Cut outside']];
-const lzPlyDef = () => ({ photo: { F: 3000, P: 50 }, fill: { F: 3000, P: 50 }, lines: { F: 1500, P: 30, untested: 1 }, cin: { F: 300, P: 100, passes: 2, untested: 1 }, cout: { F: 300, P: 100, passes: 3, untested: 1 } });
-function lzMatDefaults() { const ply = lzPlyDef(), bw = JSON.parse(JSON.stringify(ply));
-  bw.photo = { F: 3000, P: 35, untested: 1 }; bw.fill = { F: 3000, P: 35, untested: 1 }; Object.values(bw).forEach(j => j.untested = 1);
-  return { cur: 'ply', list: [{ id: 'ply', name: '4 mm beech ply', jobs: ply }, { id: 'basswood', name: '1 mm basswood', jobs: bw }] }; }
-let LZM = null, LZW = null; // saved presets, working (possibly unsaved) values
-function lzMatLoad() { try { LZM = JSON.parse(localStorage.getItem('wf-materials') || 'null'); } catch (e) { LZM = null; }
-  if (!LZM || !LZM.list || !LZM.list.length) LZM = lzMatDefaults();
-  if (!LZM.list.some(m => m.id === LZM.cur)) LZM.cur = LZM.list[0].id; lzMatWork(); }
-function lzMatStore() { try { localStorage.setItem('wf-materials', JSON.stringify(LZM)); } catch (e) { /* */ } }
-const lzMat = () => LZM.list.find(m => m.id === LZM.cur);
-function lzMatWork() { LZW = JSON.parse(JSON.stringify(lzMat().jobs)); LZ_JOBS.forEach(([k]) => { if (!LZW[k]) LZW[k] = { ...lzPlyDef()[k], untested: 1 }; }); }
-const lzMatName = () => lzMat().name, lzMatTag = () => (lzMat().name.replace(/\d+(\.\d+)?\s*mm/gi, '').trim().split(/\s+/).pop() || 'material').toLowerCase().replace(/[^a-z0-9-]/g, '') || 'material';
-function lzBurnOf(job) { const j = LZW[job] || {}; return { F: Math.max(1, Math.round(+j.F || 1000)), P: Math.min(100, Math.max(1, Math.round(+j.P || 1))), passes: Math.max(1, Math.round(+j.passes || 1)), untested: !!j.untested }; }
-const lzDirty = () => JSON.stringify(LZW) !== JSON.stringify(lzMat().jobs);
-function lzMatSave() { const m = lzMat(); LZ_JOBS.forEach(([k]) => { if (JSON.stringify(LZW[k]) !== JSON.stringify(m.jobs[k])) delete LZW[k].untested; });
-  m.jobs = JSON.parse(JSON.stringify(LZW)); lzMatStore(); lzBurnUI(); lzRefresh(); }
-function lzBurnUI() { const box = $('lzBurn'); if (!box || !LZM) return; const smax = +($('lzSmax') || {}).value || 1000;
-  box.innerHTML = `<label><span>Material</span><select id="lzMatSel">${LZM.list.map(m => `<option value="${esc(m.id)}"${m.id === LZM.cur ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}<option value="+new">+ Save new…</option></select></label>
-    <table class="lzbt"><tr><th></th><th>Speed</th><th>Power %</th><th>Passes</th></tr>${LZ_JOBS.map(([k, t]) => { const j = LZW[k], cut = k === 'cin' || k === 'cout';
-      return `<tr><td>${t}${j.untested ? ' <span class="lzunt">not tested</span>' : ''}</td><td><input type="number" min="1" max="20000" step="100" data-bj="${k}" data-bf="F" value="${esc(String(j.F))}"></td><td><input type="number" min="1" max="100" step="1" data-bj="${k}" data-bf="P" value="${esc(String(j.P))}"></td><td>${cut ? `<input type="number" min="1" max="20" step="1" data-bj="${k}" data-bf="passes" value="${esc(String(j.passes || 1))}">` : ''}</td></tr>`; }).join('')}</table>
-    <div class="lzbbtn"><button id="lzMatSave">${lzDirty() ? '💾 Save to preset (unsaved changes)' : '💾 Save to preset'}</button><button id="lzMatRen">Rename</button><button id="lzMatDel">Delete</button><button id="lzMatReset" title="Undo unsaved changes">Undo changes</button></div>
-    <div class="hint">Every .nc file gets these numbers written in: in LaserGRBL just open and Start. Etch lines and cuts are .nc too unless Line steps is set to SVG; then type these in LaserGRBL – S-MAX = power % of ${smax}. Passes are a note for SVG cuts: type them in LaserGRBL or run the cut again.</div>`; }
+const LZ_MODES = [['ltl', 'Line To Line'], ['dith', 'Dithering'], ['vec', 'Vector']], LZ_TAG = { ltl: 'LTL', dith: 'DITH', vec: 'VEC' };
+const lzRasterJob = k => k === 'photo' || k === 'fill';
+const lzDef = () => ({ photo: { mode: 'ltl', P: 100, F: 1000, untested: 1 }, fill: { mode: 'ltl', P: 100, F: 1000, untested: 1 }, lines: { mode: 'vec', P: 100, F: 1000, untested: 1 },
+  cin: { mode: 'vec', P: 100, F: 1000, passes: 3, untested: 1 }, cout: { mode: 'vec', P: 100, F: 1000, passes: 3, untested: 1 } });
+let LZW = null; // last-used values per step type, kept on this device
+function lzBurnLoad() { let sv = null; try { sv = JSON.parse(localStorage.getItem('wf-burn') || 'null'); } catch (e) { sv = null; } const d = lzDef(); LZW = {};
+  LZ_JOBS.forEach(([k]) => { LZW[k] = Object.assign({}, d[k], (sv && sv[k]) || {}); if (!lzRasterJob(k)) LZW[k].mode = 'vec'; if (!LZ_TAG[LZW[k].mode]) LZW[k].mode = d[k].mode; }); }
+function lzBurnStore() { try { localStorage.setItem('wf-burn', JSON.stringify(LZW)); } catch (e) { /* */ } }
+function lzBurnOf(job) { const j = LZW[job] || {}, d = lzDef()[job] || {}, P = +j.P, F = +j.F;
+  return { mode: LZ_TAG[j.mode] ? j.mode : 'vec', P: P > 0 ? Math.min(100, Math.max(1, Math.round(P * 10) / 10)) : d.P, F: F > 0 ? Math.round(F * 10) / 10 : d.F,
+    passes: Math.min(5, Math.max(1, Math.round(+j.passes || 1))), untested: !!j.untested }; }
+const lzTagOf = (job, b) => `${LZ_TAG[b.mode]} P${b.P} F${b.F}${(job === 'cin' || job === 'cout') && b.passes > 1 ? ` x${b.passes}` : ''}`;
+const lzFwarn = F => F < 100 || F > 20000 ? ' <span class="lzunt">speed outside 100–20000 – check</span>' : '';
+function lzCtl(k) { const b = lzBurnOf(k), cut = k === 'cin' || k === 'cout', ras = lzRasterJob(k);
+  return `<label>Mode <select data-bj="${k}" data-bf="mode"${ras ? '' : ' disabled title="Lines and cuts always burn as Vector"'}>${(ras ? LZ_MODES : LZ_MODES.filter(m => m[0] === 'vec')).map(([v, t]) => `<option value="${v}"${b.mode === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+    <label>Power % <input type="number" min="1" max="100" step="any" data-bj="${k}" data-bf="P" value="${b.P}"></label>
+    <label>Speed <input type="number" min="1" step="any" data-bj="${k}" data-bf="F" value="${b.F}"></label>${cut ? `<label>Passes <select data-bj="${k}" data-bf="passes">${[1, 2, 3, 4, 5].map(n => `<option${b.passes === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}${b.untested ? ' <span class="lzunt">starting guess</span>' : ''}${lzFwarn(b.F)}`; }
+function lzBurnUI() { const box = $('lzBurn'); if (!box || !LZW) return;
+  box.innerHTML = LZ_JOBS.map(([k, t]) => `<div class="lzcb"><b style="min-width:84px">${t}</b>${lzCtl(k)}</div>`).join('') +
+    `<div class="hint">Power is % of your laser max S. Speed in mm/min. Line To Line = rows of grey; Dithering = black/white dots, then rows; Vector = traced outlines. Etch lines and cuts always burn as Vector. Your last numbers are remembered.</div>`; }
 function lzRefresh() { lzBurnUI(); if (lzLast) lzPreview().catch(e => console.warn(e)); }
 async function lzPreview() { const st = await laserSteps(); for (const s of st) { s.bytes = await s.data(); if (s.crop && s.crop.px) { const c = s.crop, g = v => String(Math.round(v * 10) / 10); s.file = `${fileBase()} ${s.n} ${s.short} W${g(c.W)} H${g(c.H)} X${g(c.X)} Y${g(c.Y)}.png`; } } lzLast = st; lzStepsUI(st); }
-function lzCardBurn(s, i) { const b = s.b, smax = +($('lzSmax') || {}).value || 1000, cut = s.kind === 'CUT';
-  return `<div class="lzcb"><label>Speed <input type="number" min="1" max="20000" step="100" data-bj="${s.job}" data-bf="F" value="${b.F}"></label><label>Power % <input type="number" min="1" max="100" step="1" data-bj="${s.job}" data-bf="P" value="${b.P}"></label>${cut ? `<label>Passes <input type="number" min="1" max="20" step="1" data-bj="${s.job}" data-bf="passes" value="${b.passes}"></label>` : ''}${b.untested ? ' <span class="lzunt">not tested</span>' : ''}
-    <div class="dim">${s.type === 'nc' ? `Written into this file (${esc(lzMatName())}).` : `Type in LaserGRBL: <b class="lzval">speed ${b.F} &nbsp; S-MAX ${Math.round(b.P / 100 * smax)}</b> (${b.P}% of ${smax})${cut && b.passes > 1 ? `, <b>${b.passes} passes</b>` : ''}. SVG files can't carry speed or power.`}</div>
-    <button data-lzsave="1">💾 Save to preset${lzDirty() ? ' (unsaved changes)' : ''}</button></div>`; }
-function lzBurnEdit(e) { const k = e.target.dataset.bj, f = e.target.dataset.bf; if (!k || !f) return; const v = +e.target.value; if (!(v > 0)) return; LZW[k][f] = v; lzRefresh(); }
+function lzCardBurn(s) { const b = s.b, smax = +($('lzSmax') || {}).value || 1000, cut = s.kind === 'CUT';
+  return `<div class="lzcb">${lzCtl(s.job)}
+    <div class="dim">${s.type === 'nc' ? 'Written into this file.' : `Type in LaserGRBL: <b class="lzval">speed ${b.F} &nbsp; S-MAX ${Math.round(b.P / 100 * smax)}</b> (${b.P}% of ${smax})${cut && b.passes > 1 ? `, <b>${b.passes} passes</b>` : ''}. SVG/PNG files can't carry speed or power.`}</div></div>`; }
+function lzBurnEdit(e) { const k = e.target.dataset.bj, f = e.target.dataset.bf; if (!k || !f || !LZW[k]) return;
+  if (f === 'mode') LZW[k].mode = e.target.value; else { const v = +e.target.value; if (!(v > 0)) { lzRefresh(); return; } LZW[k][f] = f === 'P' ? Math.min(100, Math.max(1, v)) : v; }
+  delete LZW[k].untested; lzBurnStore(); lzRefresh(); }
 ['lzBurn', 'lzSteps'].forEach(id => $(id) && $(id).addEventListener('change', lzBurnEdit));
-$('lzBurn') && $('lzBurn').addEventListener('change', e => { if (e.target.id !== 'lzMatSel') return; const v = e.target.value;
-  if (v === '+new') { const n = (prompt('Name for the new material (e.g. 3 mm basswood). It starts with the numbers shown now.', '') || '').trim(); if (!n) { lzBurnUI(); return; }
-    const id = 'm' + Date.now(); LZM.list.push({ id, name: n, jobs: JSON.parse(JSON.stringify(LZW)) }); LZM.cur = id; }
-  else LZM.cur = v;
-  lzMatStore(); lzMatWork(); lzRefresh(); });
-$('lzBurn') && $('lzBurn').addEventListener('click', e => { const id = e.target.id;
-  if (id === 'lzMatSave') lzMatSave();
-  else if (id === 'lzMatReset') { lzMatWork(); lzRefresh(); }
-  else if (id === 'lzMatRen') { const n = (prompt('New name for this material', lzMatName()) || '').trim(); if (n) { lzMat().name = n; lzMatStore(); lzRefresh(); } }
-  else if (id === 'lzMatDel') { if (LZM.list.length < 2) { alert('Keep at least one material.'); return; } if (!confirm(`Delete "${lzMatName()}"?`)) return;
-    LZM.list = LZM.list.filter(m => m.id !== LZM.cur); LZM.cur = LZM.list[0].id; lzMatStore(); lzMatWork(); lzRefresh(); } });
 $('lzSmax') && $('lzSmax').addEventListener('change', () => lzRefresh());
-lzMatLoad(); lzBurnUI();
+lzBurnLoad(); lzBurnUI();
 let lzLast = null;
 const lzMime = t => t === 'png' ? 'image/png' : t === 'nc' ? 'text/plain' : 'image/svg+xml', lzBlob = s => new Blob([s.bytes], { type: lzMime(s.type) });
 async function laserPack(asZip) {
@@ -1213,7 +1218,7 @@ function lzStepText(s) {
     `  Then set speed and S-MAX > Create!  Frame now shows just the picture, in the same place it will burn.`); }
   else if (s.type === 'nc') L.push(`  G-code file: File > Open File > pick it > Start. No box opens - nothing to size or offset, it lines up by itself.`, `  Power/speed: ${s.mode}. To adjust, use the S [1.00x] (power) and G1 [1.00x] (speed) buttons in LaserGRBL's bottom bar.`);
   else L.push(`  LaserGRBL: File > Open File > pick it > set speed and S-MAX > Create!  Nothing else to set - it lines up by itself.`);
-  L.push(`  ${s.warn}`, `  Material: ${lzMatName()}. Speed ${s.b.F}, power ${s.b.P}%${s.kind === 'CUT' ? `, passes ${s.b.passes}` : ''}${s.b.untested ? ' (not tested yet)' : ''}${s.type === 'nc' ? ' - already in the file.' : ` - type in LaserGRBL (S-MAX ${Math.round(s.b.P / 100 * (+($('lzSmax') || {}).value || 1000))}).`}`, `  Result: ______________`, ``);
+  L.push(`  ${s.warn}`, `  Mode ${LZ_TAG[s.b.mode]}. Speed ${s.b.F}, power ${s.b.P}%${s.kind === 'CUT' ? `, passes ${s.b.passes}` : ''}${s.b.untested ? ' (starting guess)' : ''}${s.type === 'nc' ? ' - already in the file.' : ` - type in LaserGRBL (S-MAX ${Math.round(s.b.P / 100 * (+($('lzSmax') || {}).value || 1000))}).`}`, `  Result: ______________`, ``);
   return L.join('\r\n');
 }
 function lzReadme(st, marks) {
@@ -1240,7 +1245,7 @@ function lzStepsUI(st) {
       <button data-lzdl="${i}">⬇ Download step ${s.n} only</button></div></div>`; }).join('');
   box.hidden = false;
 }
-$('lzSteps') && $('lzSteps').addEventListener('click', e => { if (e.target.dataset.lzsave != null) { lzMatSave(); return; } const i = e.target.dataset.lzdl; if (i == null || !lzLast) return; const s = lzLast[+i];
+$('lzSteps') && $('lzSteps').addEventListener('click', e => { const i = e.target.dataset.lzdl; if (i == null || !lzLast) return; const s = lzLast[+i];
   download(lzBlob(s), s.file); });
 function laserKeyOfSel() { return sel.img ? 'img:' + sel.slot : sel.orn ? 'orn' : sel.letters.length ? 't:' + sel.letters[0].l : null; }
 function laserUI() {
@@ -1274,8 +1279,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v36';
-const WHATS_NEW = 'v36 (laser): 1) New Material picker in the Laser panel: 4 mm beech ply, 1 mm basswood, or + Save new. Each material keeps speed and power for Photo, Etch fill, Etch lines, Cut inside and Cut outside, plus passes for cuts. Ply photo and etch fill start at your 3000 / 50%; everything else is marked not tested (basswood raster starts at 35%). Rename, Delete, Save to preset. Saved on this device, kept through updates. 2) Tapping Download/zip now opens a Burn settings screen: pick the material, check or change speed, power and passes, then Export. Etch lines and cuts are now .nc G-code too (same safe format as v35, passes repeat the path), so every file just opens and Starts. To get the old SVG cut and outline files back, set Line steps as: SVG. After export, every step card also has Speed and Power boxes (and Passes for cuts). For .nc steps the numbers go into the file; for SVG steps the card shows what to type in LaserGRBL. 3) File names now include the material and settings, e.g. 1 photo basswood F3000 P35.nc. 4) The old Photo/Letter speed and power boxes are replaced by the material table. Size, position, alignment and shapes are unchanged. Export again before you burn. v35 (laser): the photo and filled-letter .nc files now match LaserGRBL\'s own G-code: short lines only (the long note lines at the top were longer than the laser board accepts), laser off (M5) at the start, speed on the first burn line, and every position kept at 0 or more and inside the page. Size, position, speed and power are unchanged. Export again before you burn. If LaserGRBL shows MachineAlarm: press OK, then the padlock (Unlock) button, or Home first if your laser has homing. v34: no laser file changes (this note is now a small bar you can close). What changed in v33 (laser): 1) The photo and filled-letter steps are now G-code files (.nc) instead of PNG pictures. In LaserGRBL: File > Open File > pick it > Start. No picture box opens, so there is no size, offset or Autosize to set, and it lines up with the cut by itself. 2) Speed and power for those two steps are set in the app Laser panel (Photo speed/power, Letter speed/power, starting at 3000 and 50%) and written into the file; the numbers are in the file name. To fine-tune at the laser, use the S (power) and G1 (speed) buttons in LaserGRBL\'s bottom bar. 3) Laser max S ($30) box, default 1000: power % is worked out from it. 4) The old PNG files are still there: set Picture steps as to PNG. SVG files (outline etch and cuts) are unchanged.';
+const APP_VERSION = 'v37';
+const WHATS_NEW = 'v37 (laser): 1) Materials are gone: no Material picker, no presets, no Save/Rename/Delete, and no material in file names. 2) Each step on the Burn settings screen and on each step card now has three settings: Mode (Line To Line, Dithering or Vector), Power % (type any value 1-100) and Speed (type any value in mm/min; a warning shows outside 100-20000). Cuts also keep Passes (1-5). 3) Modes for Photo and Etch fill: Line To Line = rows as before; Dithering = black/white dots, then rows; Vector = traced outlines burned as paths (Etch fill: the outlines of the filled letters and ornaments). Etch lines and cuts always burn as Vector. 4) Every step starts at Power 100%, Speed 1000 (cuts 3 passes), marked starting guess - turn power down for etching before you burn. Your last numbers for each step are remembered. 5) File names now show mode, power and speed, e.g. 1 photo LTL P100 F1000.nc, cut outside VEC P100 F1000 x3.nc. Size, position, alignment and the G-code format are unchanged. Export again before you burn. v36 (laser): 1) New Material picker in the Laser panel: 4 mm beech ply, 1 mm basswood, or + Save new. Each material keeps speed and power for Photo, Etch fill, Etch lines, Cut inside and Cut outside, plus passes for cuts. Ply photo and etch fill start at your 3000 / 50%; everything else is marked not tested (basswood raster starts at 35%). Rename, Delete, Save to preset. Saved on this device, kept through updates. 2) Tapping Download/zip now opens a Burn settings screen: pick the material, check or change speed, power and passes, then Export. Etch lines and cuts are now .nc G-code too (same safe format as v35, passes repeat the path), so every file just opens and Starts. To get the old SVG cut and outline files back, set Line steps as: SVG. After export, every step card also has Speed and Power boxes (and Passes for cuts). For .nc steps the numbers go into the file; for SVG steps the card shows what to type in LaserGRBL. 3) File names now include the material and settings, e.g. 1 photo basswood F3000 P35.nc. 4) The old Photo/Letter speed and power boxes are replaced by the material table. Size, position, alignment and shapes are unchanged. Export again before you burn. v35 (laser): the photo and filled-letter .nc files now match LaserGRBL\'s own G-code: short lines only (the long note lines at the top were longer than the laser board accepts), laser off (M5) at the start, speed on the first burn line, and every position kept at 0 or more and inside the page. Size, position, speed and power are unchanged. Export again before you burn. If LaserGRBL shows MachineAlarm: press OK, then the padlock (Unlock) button, or Home first if your laser has homing. v34: no laser file changes (this note is now a small bar you can close). What changed in v33 (laser): 1) The photo and filled-letter steps are now G-code files (.nc) instead of PNG pictures. In LaserGRBL: File > Open File > pick it > Start. No picture box opens, so there is no size, offset or Autosize to set, and it lines up with the cut by itself. 2) Speed and power for those two steps are set in the app Laser panel (Photo speed/power, Letter speed/power, starting at 3000 and 50%) and written into the file; the numbers are in the file name. To fine-tune at the laser, use the S (power) and G1 (speed) buttons in LaserGRBL\'s bottom bar. 3) Laser max S ($30) box, default 1000: power % is worked out from it. 4) The old PNG files are still there: set Picture steps as to PNG. SVG files (outline etch and cuts) are unchanged.';
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
