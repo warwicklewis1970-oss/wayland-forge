@@ -21,12 +21,14 @@
       <button id="homeProjects" class="hb">📂 Projects</button>
       <button id="homeTour" class="hb">▶ Tutorial</button>
     </div>
+    <div class="hver" id="homeVer"></div>
     <div id="homeProjs" hidden>
       <div class="row hph"><button id="homeBack">← Back</button><b class="grow">Projects</b><label class="filebtn">Open file…<input type="file" id="homeLoad" accept=".json,application/json" hidden></label></div>
       <ul id="projList"></ul>
     </div>
   </div>
 </div>
+<div id="updBar" hidden><span>New version ready</span><button id="updBtn">Tap to update</button></div>
 <header>
   <img src="icons/anvil.svg" alt="" class="logo"><button id="homeBtn" title="Home: start screen and projects (your work is kept)" aria-label="Home">⌂</button><button id="helpBtn" title="Help &amp; tutorial (Wayland the blacksmith)" aria-label="Help and tutorial"></button><h1>Wayland Forge</h1><button id="nameBtn" class="namebtn">Untitled ✎</button>
   <div class="spacer"></div>
@@ -50,7 +52,9 @@
     <div id="sheetHandle" role="button" tabindex="0" aria-label="Resize controls (tap to cycle sizes)"><span>Controls</span></div>
     <div id="layerBar">
       <div class="row"><b class="lbt">Layers</b><select id="shapeSel" class="grow" aria-label="Active layer (top of list = in front)"></select><button id="shapeVis" class="mini2" title="Show or hide this layer">Hide</button></div>
-      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add layer</option><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
+      <div id="addPicMenu" class="picmenu" hidden><b>Add which kind of image layer?</b><button data-addpic="1">🐶 Picture in the design<small>sits inside your shape (logo, pet, photo)</small></button><button data-addpic="2">🗺 Background / map<small>sits behind everything</small></button><button data-addpic="0" class="mini">Cancel</button></div>
+      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add layer</option><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia (detailed)</option><option value="auss">Australia (smooth, for text)</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
+      <div class="row"><button id="addPicBtn" class="accent addpic grow" title="Add an image layer (picture, logo or map)">🖼 + Add image layer</button></div>
     </div>
     <details name="acc" id="sec-shape"><summary>Shape &amp; position</summary><div class="body">
       <label class="rg"><span>Move X</span><input type="range" min="-500" max="500" step="1" data-b="shape.x"><output></output></label>
@@ -59,7 +63,7 @@
       <label class="rg"><span>Turn</span><input type="range" min="-180" max="180" step="1" data-b="shape.rot"><output></output></label>
       <div class="row"><button id="shapeCentre" class="grow">Centre this layer</button></div>
       <div class="g2">
-        <label><span>Type</span><select data-b="base.shape"><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia</option></select></label>
+        <label><span>Type</span><select data-b="base.shape"><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia (detailed)</option><option value="auss">Australia (smooth, for text)</option></select></label>
         <div class="checks"><label class="chk"><input type="checkbox" data-b="base.outer">Outer</label><label class="chk"><input type="checkbox" data-b="base.inner">Inner</label></div>
       </div>
       <label class="rg"><span>Width</span><input type="range" min="150" max="470" step="1" data-b="base.rx"><output></output></label>
@@ -97,6 +101,33 @@
         <div class="row"><button id="dupOpp" class="grow">Duplicate to opposite side</button><button id="delLayer" class="danger">Delete</button></div>
       </div>
     </div></details>
+    <details name="acc" id="sec-img"><summary>🖼 Image layers</summary><div class="body">
+      <div class="row"><b class="lbt">Image layers</b><select id="imgSel" class="grow" aria-label="Active image layer (top of list = in front)"></select></div>
+      <div class="row lbb"><button class="accent grow addpic2" data-addpicopen="1">🖼 + Add image layer</button><button id="imgRen" title="Rename image layer">✎</button><button id="imgUp" title="Bring forward">↑</button><button id="imgDown" title="Send back">↓</button><button id="delImg" class="danger" title="Delete image layer">✕</button></div>
+      <label><span>Depth</span><select id="imgDepth"><option value="front">In the design (above shape fills)</option><option value="behind">Behind everything (map / backdrop)</option></select></label>
+      <p class="hint" id="imgSlotHint"></p>
+      <div class="row" id="imgUploadRow"><label class="filebtn grow">Upload / replace picture…<input type="file" id="imgFile" accept="image/*" hidden></label><button id="centreImg">Centre</button></div>
+      <div id="imgFields">
+        <label class="rg"><span>Size</span><input type="range" min="40" max="1600" step="1" data-b="img.size"><output></output></label>
+        <label id="imgClipRow"><span>Placement</span><select data-b="img.clipMode"><option value="clip">Inside path (to inside edge of line)</option><option value="clipout">Inside, to outside edge of line</option><option value="outside">Outside path only</option><option value="outin">Outside, from inside edge (runs under line)</option><option value="free">Free – no clipping</option></select></label>
+        <label><span>Path</span><select id="imgClipLine"></select></label>
+        <div class="row"><button id="fitImg" class="grow" title="Scale and centre so the whole image sits inside the inner line">⤢ Fit inside line</button><button id="fillImg" class="grow" title="Scale to cover the inner shape and clip it to the line">◉ Fill &amp; clip</button></div>
+        <label><span>Style</span><select data-b="img.mode"><option value="orig">Original picture</option><option value="sil">Silhouette (solid cutout)</option><option value="trace">Vector trace (SVG paths)</option></select></label>
+        <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.removeBg">Remove background (corner colour)</label>
+        <label class="rg" data-imgmodes="orig"><span>Tolerance</span><input type="range" min="5" max="200" step="1" data-b="img.tol"><output></output></label>
+        <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.flood">Only background touching the edges (keeps light parts of the subject)</label>
+        <label class="rg" data-imgmodes="orig"><span>Background to white</span><input type="range" min="150" max="255" step="1" data-b="img.whiteLvl"><output></output></label>
+        <div class="hint" data-imgmodes="orig">For laser photos: slide "Background to white" left until the grey background disappears (255 = off). Anything this light or lighter is not burnt.</div>
+        <div class="g2" data-imgmodes="sil trace">
+          <label><span>Background</span><select data-b="img.bgMode"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+          <label><span>Fill</span><input type="color" data-b="img.color" class="col"></label>
+        </div>
+        <label class="rg" data-imgmodes="sil trace"><span>Threshold</span><input type="range" min="10" max="245" step="1" data-b="img.threshold"><output></output></label>
+        <label class="rg" data-imgmodes="sil trace"><span>Smoothing</span><input type="range" min="0" max="5" step="1" data-b="img.smooth"><output></output></label>
+        <label class="chk" data-imgmodes="sil trace"><input type="checkbox" data-b="img.invert">Invert (negative cutout)</label>
+        <div class="hint" data-imgmodes="trace" id="traceInfo">Traced shapes export as true vector paths in SVG and PDF.</div>
+      </div>
+    </div></details>
     <details name="acc" id="sec-letter"><summary>Letter edit</summary><div class="body">
       <div class="row"><button id="multiBtn2" class="multitog grow" aria-pressed="false">✚ Multi-select: off</button><button id="selAll" class="grow">Select all in layer</button></div>
       <div id="letterNone" class="hint">Click a letter to select it. Shift/Ctrl/⌘-click, or switch Multi-select on, to add or remove letters anywhere. You can also drag a box on empty space. Esc clears the selection.</div>
@@ -128,31 +159,6 @@
         <div class="row nudge"><span class="hint">Nudge</span><button data-onudge="-1,0">←</button><button data-onudge="0,-1">↑</button><button data-onudge="0,1">↓</button><button data-onudge="1,0">→</button><button id="centreOrn" class="mini" title="Put it in the middle">Centre</button></div>
         <label class="rg" id="ornRotRow"><span>Rotation</span><input type="range" min="-180" max="180" step="1" data-b="orn.rot"><output></output></label>
         <div class="row"><label><span>Colour</span><input type="color" data-b="orn.color" class="col"></label><label id="ornBerry"><span>Berries</span><input type="color" data-b="orn.color2" class="col"></label><button id="mirrorOrn" class="grow">Mirror copy</button><button id="ornLink" class="grow" title="Linked: the mirror copy moves with this one. Tap to let them move separately">🔗 Unlink</button><button id="delOrn" class="danger">Delete</button></div>
-      </div>
-    </div></details>
-    <details name="acc" id="sec-img"><summary>Pictures</summary><div class="body">
-      <div class="row"><button class="grow" data-slotbtn="1">🐶 Centre picture</button><button class="grow" data-slotbtn="2">🗺 Background picture</button></div>
-      <p class="hint" id="imgSlotHint"></p>
-      <div class="row"><label class="filebtn grow">Upload…<input type="file" id="imgFile" accept="image/*" hidden></label><button id="centreImg">Centre</button><button id="delImg" class="danger">Remove</button></div>
-      <div id="imgFields">
-        <label class="rg"><span>Size</span><input type="range" min="40" max="1600" step="1" data-b="img.size"><output></output></label>
-        <label id="imgClipRow"><span>Placement</span><select data-b="img.clipMode"><option value="clip">Inside path (to inside edge of line)</option><option value="clipout">Inside, to outside edge of line</option><option value="outside">Outside path only</option><option value="outin">Outside, from inside edge (runs under line)</option><option value="free">Free – no clipping</option></select></label>
-        <label><span>Path</span><select id="imgClipLine"></select></label>
-        <div class="row"><button id="fitImg" class="grow" title="Scale and centre so the whole image sits inside the inner line">⤢ Fit inside line</button><button id="fillImg" class="grow" title="Scale to cover the inner shape and clip it to the line">◉ Fill &amp; clip</button></div>
-        <label><span>Style</span><select data-b="img.mode"><option value="orig">Original picture</option><option value="sil">Silhouette (solid cutout)</option><option value="trace">Vector trace (SVG paths)</option></select></label>
-        <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.removeBg">Remove background (corner colour)</label>
-        <label class="rg" data-imgmodes="orig"><span>Tolerance</span><input type="range" min="5" max="200" step="1" data-b="img.tol"><output></output></label>
-        <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.flood">Only background touching the edges (keeps light parts of the subject)</label>
-        <label class="rg" data-imgmodes="orig"><span>Background to white</span><input type="range" min="150" max="255" step="1" data-b="img.whiteLvl"><output></output></label>
-        <div class="hint" data-imgmodes="orig">For laser photos: slide "Background to white" left until the grey background disappears (255 = off). Anything this light or lighter is not burnt.</div>
-        <div class="g2" data-imgmodes="sil trace">
-          <label><span>Background</span><select data-b="img.bgMode"><option value="light">Light</option><option value="dark">Dark</option></select></label>
-          <label><span>Fill</span><input type="color" data-b="img.color" class="col"></label>
-        </div>
-        <label class="rg" data-imgmodes="sil trace"><span>Threshold</span><input type="range" min="10" max="245" step="1" data-b="img.threshold"><output></output></label>
-        <label class="rg" data-imgmodes="sil trace"><span>Smoothing</span><input type="range" min="0" max="5" step="1" data-b="img.smooth"><output></output></label>
-        <label class="chk" data-imgmodes="sil trace"><input type="checkbox" data-b="img.invert">Invert (negative cutout)</label>
-        <div class="hint" data-imgmodes="trace" id="traceInfo">Traced shapes export as true vector paths in SVG and PDF.</div>
       </div>
     </div></details>
     <details name="acc" id="sec-col"><summary>Colours &amp; background</summary><div class="body">

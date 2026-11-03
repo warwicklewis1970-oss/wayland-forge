@@ -27,7 +27,7 @@ const defaults0 = () => ({
   shapes: [newShape('Layer 1')],
   layers: [newLayer('WAYLAND FORGE', 'top'), newLayer('EST. 2026', 'bottom')],
   ornaments: [{ id: uid(), type: 'star', x: 160, y: 500, r: 22, rot: 0, color: '#1b1b1b' }, { id: uid(), type: 'star', x: 840, y: 500, r: 22, rot: 0, color: '#1b1b1b' }],
-  image: null, image2: null, laser: {},
+  images: [], laser: {},
   swatches: ['#1b1b1b', '#ffffff', '#e0a043', '#8b1e1e', '#1e4d8b', '#2f6b3a']
 });
 let S = defaults();
@@ -46,8 +46,9 @@ const shTr = sh => { const k = sh.scale || 1; if (!sh.x && !sh.y && !sh.rot && k
 const shPt = (sh, x, y) => { const k = sh.scale || 1, a = (sh.rot || 0) * Math.PI / 180, u = (x - C) * k, v = (y - C) * k; return { x: C + sh.x + u * Math.cos(a) - v * Math.sin(a), y: C + sh.y + u * Math.sin(a) + v * Math.cos(a) }; };
 const wrapSh = (sh, inner) => { const t = shTr(sh); return t && inner ? `<g transform="${t}">${inner}</g>` : inner; };
 const imgShape = () => S.shapes[0];
-const IM = () => sel.slot === 2 ? S.image2 : S.image; // image being edited: 1 = centre picture, 2 = background picture
-const setIM = v => { if (sel.slot === 2) S.image2 = v; else S.image = v; };
+const IM = () => S.images.find(i => i.id === sel.slot) || null; // image layer being edited
+const setIM = v => { const i = S.images.findIndex(x => x.id === sel.slot); if (!v) { if (i >= 0) S.images.splice(i, 1); return; } if (i >= 0) S.images[i] = v; else S.images.push(v); };
+const imgName = im => esc(im.name || 'Image') + (im.behind ? ' · behind' : '') + (im.src ? '' : ' (empty)');
 const CLIPS = ['clip', 'clipout', 'outside', 'outin', 'free'];
 const clipOf = im => CLIPS.includes(im.clipMode) ? im.clipMode : (im.clip ? 'clip' : 'free');
 const clipShapeOf = im => S.shapes.find(x => x.id === im.clipShape) || S.shapes[0];
@@ -68,12 +69,16 @@ const selObjs = () => sel.letters.map(s => letterObj(s.l, s.i)).filter(Boolean);
 // straight edges joined by circular corner arcs. Offsetting such a shape is exact — every edge
 // shifts along its normal and every arc keeps its centre and changes radius — so inner/outer lines
 // are true offset curves and the text path is a continuous, corner-rounded curve.
-const FILLET = ['polygon', 'star', 'heart', 'aus'];
+const FILLET = ['polygon', 'star', 'heart', 'aus', 'auss'];
+// Stylised Australia: few points, big rounded corners, no Gulf/Bight notches, so text runs smoothly round it.
+const AUSS = (() => { let P = [[142,-11],[145.2,-15.8],[148.5,-20.2],[152.5,-24.5],[153.6,-28.5],[151.8,-33.5],[149,-37.6],[144,-38.8],[139,-37.6],[133,-35],[126,-34.6],[119,-35.3],[115,-34],[113.6,-28],[114.2,-22.5],[118.5,-19.8],[123,-16.5],[126.5,-13.8],[131,-11.6],[136.5,-11.4]];
+  for (let it = 0; it < 3; it++) { const Q = []; P.forEach((p, i) => { const q = P[(i + 1) % P.length]; Q.push([.75 * p[0] + .25 * q[0], .75 * p[1] + .25 * q[1]], [.25 * p[0] + .75 * q[0], .25 * p[1] + .75 * q[1]]); }); P = Q; } return P; })(); // Chaikin-smoothed
 // Australia (simplified mainland, clockwise from Cape York) + Tasmania, as lon/lat.
 const AUS = [[142.5,-10.7],[143.5,-14],[145.4,-15],[146,-18.5],[149,-21],[151,-23.5],[153.2,-25.5],[153.6,-28.5],[153,-31.5],[151.3,-33.8],[150,-37.5],[147.5,-38],[146.3,-39.1],[144.5,-38.3],[141,-38.1],[139.7,-37.2],[138,-35.6],[138.1,-34.1],[137.5,-35.1],[137.4,-34],[137.8,-33],[135.9,-34.8],[134.2,-32.7],[131.2,-31.5],[126,-32.3],[123.6,-33.9],[118,-35],[115,-34.3],[115.7,-32],[115,-29.5],[113.5,-26],[113.7,-22.5],[116.8,-20.6],[121,-19.5],[122.2,-17.5],[125,-14.5],[127.5,-14],[129.5,-15],[130.2,-12.5],[132.5,-11.2],[136,-12],[135.7,-14],[137.7,-16.2],[140.8,-17.5],[141.6,-13]];
 const TAS = [[144.6,-40.7],[148.3,-40.9],[148,-43.2],[146.8,-43.6],[145.2,-42.2]];
 const ausXY = ([lo, la]) => [(lo - 133.5) / 20.5, (-la - 27.2) / 16.6];
-function tasD(d) { const b = SB(); if (b.shape !== 'aus' || d < -Math.max(b.width, 4)) return '';
+function tasD(d) { const b = SB(); if (b.shape === 'auss') { if (d < -Math.max(b.width, 4)) return ''; const r = Math.max(2, 0.075 * b.rx + d), cx = C + 0.62 * b.rx, cy = C + 0.86 * b.ry; return `M${f2(cx - r)} ${f2(cy)}a${f2(r)} ${f2(r)} 0 1 0 ${f2(2 * r)} 0a${f2(r)} ${f2(r)} 0 1 0 ${f2(-2 * r)} 0Z`; }
+  if (b.shape !== 'aus' || d < -Math.max(b.width, 4)) return '';
   const P = TAS.map(q => { const [x, y] = ausXY(q); return [C + b.rx * x, C + b.ry * y]; }), cx = P.reduce((a, q) => a + q[0], 0) / P.length, cy = P.reduce((a, q) => a + q[1], 0) / P.length;
   const r = Math.max(...P.map(q => Math.hypot(q[0] - cx, q[1] - cy))), k = Math.max(0.2, 1 + d / r);
   return 'M' + P.map(q => `${f2(cx + (q[0] - cx) * k)} ${f2(cy + (q[1] - cy) * k)}`).join('L') + 'Z'; }
@@ -88,6 +93,7 @@ function shapeVerts() {
     }
     return { V, R, fixed };
   }
+  if (b.shape === 'auss') { for (const q of AUSS) { const [x, y] = ausXY(q); V.push(P2(C + rx * x, C + ry * y)); R.push(Math.min(cr, 4)); fixed.push(false); } return { V, R, fixed }; }
   if (b.shape === 'aus') { for (const q of AUS) { const [x, y] = ausXY(q); V.push(P2(C + rx * x, C + ry * y)); R.push(Math.min(cr, 6)); fixed.push(false); } return { V, R, fixed }; }
   // heart: two lobe circles + dip vertex + tip vertex. Lobes are emitted as several corners that all
   // circumscribe the same circle (fixed radius), so they join into one smooth arc.
@@ -376,21 +382,22 @@ function imgWrap(im, el, cid) { const m = clipOf(im);
   if (m === 'clip' || m === 'clipout') return `<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse">${clipEl(im, m === 'clip' ? -1 : 1)}</clipPath></defs><g clip-path="url(#${cid})">${el}</g>`;
   if (m === 'outside' || m === 'outin') return `<defs><mask id="${cid}" maskUnits="userSpaceOnUse" x="-6000" y="-6000" width="13000" height="13000"><rect x="-6000" y="-6000" width="13000" height="13000" fill="#fff"/>${clipEl(im, m === 'outside' ? 1 : -1, 'fill="#000"')}</mask></defs><g mask="url(#${cid})">${el}</g>`;
   return el; }
-function imgArt(im, editor, slot) {
+function imgArt(im, editor) { const slot = im.id;
   const pr = procImage(im), ek = editor ? ` data-k="img" data-slot="${slot}"` : '', cid = (editor ? 'wfclip-ed' : 'wfclip-ex') + slot; let el;
   if (pr && pr.paths) { const k = im.size / Math.max(pr.w, pr.h), x0 = im.x - pr.w * k / 2, y0 = im.y - pr.h * k / 2;
     el = `<g transform="translate(${f2(x0)} ${f2(y0)}) scale(${+k.toFixed(5)})" fill="${im.color}" fill-rule="evenodd"${ek}>` +
       (editor ? `<rect width="${pr.w}" height="${pr.h}" fill="none" pointer-events="all"/>` : '') + pr.paths.map(d => `<path d="${d}"/>`).join('') + '</g>';
   } else el = `<image href="${esc(pr && pr.url ? pr.url : im.src)}" x="${f2(im.x - im.size / 2)}" y="${f2(im.y - im.size / 2)}" width="${im.size}" height="${im.size}" preserveAspectRatio="xMidYMid meet"${ek}/>`;
   let o = imgWrap(im, el, cid);
-  if (editor && sel.img && (sel.slot || 1) === slot) o += `<rect x="${im.x - im.size / 2}" y="${im.y - im.size / 2}" width="${im.size}" height="${im.size}" fill="none" stroke="#e0a043" stroke-dasharray="8 6" stroke-width="2" pointer-events="none"/>`;
+  if (editor && sel.img && sel.slot === slot) o += `<rect x="${im.x - im.size / 2}" y="${im.y - im.size / 2}" width="${im.size}" height="${im.size}" fill="none" stroke="#e0a043" stroke-dasharray="8 6" stroke-width="2" pointer-events="none"/>`;
   return o; }
 function buildArt(editor) {
   const out = [], vis = S.shapes.filter(s => s.visible !== false);
   const fills = above => { for (const sh of vis) withShape(sh, () => { const b = sh.base; if (b.fillOn && !!b.fillAbove === above) out.push(wrapSh(sh, shapeEl(0, `fill="${b.fill}"`))); }); };
-  if (S.image2) out.push(imgArt(S.image2, editor, 2)); // background picture: behind everything
+  const imgs = S.images.filter(i => i.src && i.visible !== false);
+  imgs.filter(i => i.behind).forEach(i => out.push(imgArt(i, editor))); // background image layers: behind everything
   fills(false);
-  if (S.image) out.push(imgArt(S.image, editor, 1));
+  imgs.filter(i => !i.behind).forEach(i => out.push(imgArt(i, editor)));
   fills(true); // fills set to "draw above image" (e.g. a band behind text over the photo)
   for (const sh of vis) withShape(sh, () => {
     const b = sh.base, part = [];
@@ -516,7 +523,9 @@ function syncUI() {
     const pr = partnerOf(oc); $('ornLink').hidden = !pr; $('mirrorOrn').hidden = !!pr; }
   $('ornFields').hidden = !curOrn(); $('ornBerry').hidden = !(curOrn() && /holly/.test(curOrn().type)); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
   $('imgFields').hidden = !IM(); $('imgClipRow').hidden = false; if (IM()) { const im = IM(); $('imgClipLine').innerHTML = S.shapes.map(x => ['inner', 'outer'].map(l => `<option value="${x.id}|${l}">${esc(x.name)} – ${l} line</option>`).join('')).join(''); $('imgClipLine').value = clipShapeOf(im).id + '|' + (im.clipLine || 'inner'); $('imgClipLine').parentElement.hidden = clipOf(im) === 'free'; } document.querySelectorAll('[data-slotbtn]').forEach(b => b.setAttribute('aria-pressed', String((sel.slot || 1) === +b.dataset.slotbtn)));
-  $('imgSlotHint').textContent = (sel.slot === 2 ? 'Background picture: sits behind everything (good for a map). ' : 'Centre picture: sits inside your shape. ') + (IM() ? '' : 'Tap Upload to add one.');
+  $('imgSel').innerHTML = S.images.length ? S.images.slice().reverse().map(i => `<option value="${i.id}"${i.id === sel.slot ? ' selected' : ''}>${imgName(i)}</option>`).join('') : '<option value="">No image layers yet</option>';
+  ['imgRen', 'imgUp', 'imgDown', 'delImg'].forEach(k => $(k).disabled = !IM()); $('imgUploadRow').hidden = !IM(); $('imgDepth').value = IM() && IM().behind ? 'behind' : 'front';
+  $('imgSlotHint').textContent = !S.images.length ? 'Tap + Add image layer to add a picture, logo or map. You can add as many as you like.' : !IM() ? 'Pick an image layer above.' : (IM().behind ? 'This layer sits behind everything (good for a map). ' : 'This layer sits inside your design. ') + (IM().src ? '' : 'Tap Upload to choose its picture.');
   $('swatches').innerHTML = S.swatches.map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
   laserUI(); if (curLayer()) $('fontSel').style.fontFamily = `'WF ${curLayer().font}'`;
   $('undoBtn').disabled = hist.i <= 0; $('redoBtn').disabled = hist.i >= hist.stack.length - 1;
@@ -539,16 +548,20 @@ function sanitize(raw) {
     shapes: Array.isArray(o.shapes) && o.shapes.length ? o.shapes.map((x, i) => Object.assign(newShape('Layer ' + (i + 1)), x, { base: Object.assign(baseDefaults(), x.base || {}) })) : [newShape('Layer 1', o.base)], swatches: Array.isArray(o.swatches) ? o.swatches : d.swatches,
     layers: Array.isArray(o.layers) ? o.layers.map(l => Object.assign(newLayer('', 'top'), l)) : d.layers,
     ornaments: linkMirrors(Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)) : d.ornaments),
-    image: o.image && o.image.src ? Object.assign(imgDefaults(), o.image) : null, image2: o.image2 && o.image2.src ? Object.assign(imgDefaults(), o.image2) : null,
+    images: (Array.isArray(o.images) ? o.images : []).filter(x => x && x.src).map((x, i) => Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (i + 1) }, x)),
     laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {} };
-  for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart', 'aus'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
-  for (const im of [st.image, st.image2]) if (im) { if (!CLIPS.includes(im.clipMode)) im.clipMode = im.clip ? 'clip' : 'free'; if (!im.clipLine) im.clipLine = 'inner'; }
+  for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart', 'aus', 'auss'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
+  if (!(Array.isArray(o.images) && o.images.some(x => x && x.src))) { // older projects: centre picture -> image layer 1, background picture -> image layer 2
+    const lz = st.laser;
+    [[o.image, 'img', 'Image 1', false], [o.image2, 'img2', 'Image 2 (map)', true]].forEach(([x, k, nm, bh]) => { if (!x || !x.src) return; const im = Object.assign(imgDefaults(), x, { id: uid(), name: nm, behind: bh }); st.images.push(im); if (lz[k]) { lz['img:' + im.id] = lz[k]; } delete lz[k]; });
+    st.images.reverse(); st.images.sort((a, b) => b.behind - a.behind); }
+  for (const im of st.images) { if (!CLIPS.includes(im.clipMode)) im.clipMode = im.clip ? 'clip' : 'free'; if (!im.clipLine) im.clipLine = 'inner'; }
   const ids = new Set(st.shapes.map(x => x.id)); st.layers.forEach(l => { if (!ids.has(l.shape)) l.shape = st.shapes[0].id; });
   return st; // anything else in old data (frames, templates, packs…) is dropped
 }
 function fixSel() {
   if (!S.shapes.some(s => s.id === sel.shape)) sel.shape = S.shapes[0].id;
-  if (!curLayer() || shapeOf(curLayer()) !== curShape()) { const f = S.layers.find(l => shapeOf(l) === curShape()); sel.layer = f ? f.id : null; } if (!curOrn()) sel.orn = null; if (!IM()) sel.img = false; sel.letters = sel.letters.filter(s => { const L = S.layers.find(x => x.id === s.l); return L && s.i < L.text.length; }); }
+  if (!curLayer() || shapeOf(curLayer()) !== curShape()) { const f = S.layers.find(l => shapeOf(l) === curShape()); sel.layer = f ? f.id : null; } if (!curOrn()) sel.orn = null; if (!IM()) { sel.img = false; sel.slot = S.images.length ? S.images[S.images.length - 1].id : null; } sel.letters = sel.letters.filter(s => { const L = S.layers.find(x => x.id === s.l); return L && s.i < L.text.length; }); }
 // ---- projects: autosave "last session" + named projects kept in this browser ----
 const PROJS = 'wayland-forge-projects-v1', META = 'wayland-forge-session-v1';
 // ---- storage: IndexedDB (large quota) with an in-memory copy so reads stay instant ----
@@ -606,13 +619,22 @@ act('centreImg', () => { const im = IM(); if (im) { im.x = C; im.y = C; } });
 act('fitImg', () => { const im = IM(); if (im) Object.assign(im, fitInside(im)); });
 act('fillImg', () => { const im = IM(); if (im) Object.assign(im, fillInner(im), { clipMode: 'clip', clip: true }); });
 $('imgClipLine').addEventListener('change', e => { const im = IM(); if (!im) return; const [id, l] = e.target.value.split('|'); im.clipShape = id; im.clipLine = l; update(); commit(); });
-document.querySelectorAll('[data-slotbtn]').forEach(b => b.addEventListener('click', () => { sel.slot = +b.dataset.slotbtn; sel.img = !!IM(); sel.orn = null; sel.letters = []; update(); }));
-act('delImg', () => { setIM(null); });
+$('imgSel').addEventListener('change', e => { sel.slot = e.target.value; sel.img = !!(IM() && IM().src); sel.orn = null; sel.letters = []; update(); });
+$('imgDepth').addEventListener('change', e => { const im = IM(); if (!im) return; im.behind = e.target.value === 'behind'; update(); commit(); });
+function addImageLayer(behind) { const n = S.images.length + 1, im = Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + n + (behind ? ' (map)' : ''), behind: !!behind, src: null });
+  S.images.push(im); sel.slot = im.id; sel.img = false; sel.orn = null; sel.letters = []; $('addPicMenu').hidden = true; openSec('sec-img'); update(); commit(); $('imgFile').click(); }
+$('addPicBtn').onclick = () => { $('addPicMenu').hidden = !$('addPicMenu').hidden; };
+document.querySelectorAll('[data-addpicopen]').forEach(b => b.onclick = () => { $('addPicMenu').hidden = false; $('addPicMenu').scrollIntoView({ block: 'nearest' }); });
+document.querySelectorAll('[data-addpic]').forEach(b => b.onclick = () => { const v = b.dataset.addpic; if (v === '0') { $('addPicMenu').hidden = true; return; } addImageLayer(v === '2'); });
+act('imgRen', () => { const im = IM(); if (!im) return; const n = prompt('Name this image layer', im.name || ''); if (n) im.name = n.slice(0, 40); });
+const imgMove = d => { const i = S.images.findIndex(x => x.id === sel.slot), j = i + d; if (i < 0 || j < 0 || j >= S.images.length) return; [S.images[i], S.images[j]] = [S.images[j], S.images[i]]; };
+act('imgUp', () => imgMove(1)); act('imgDown', () => imgMove(-1));
+act('delImg', () => { const im = IM(); if (!im) return; if (im.src && !confirm(`Delete image layer "${im.name || 'Image'}"?`)) return; setIM(null); sel.slot = null; });
 act('addSwatch', () => { const c = $('swatchPick').value; if (!S.swatches.includes(c)) S.swatches.push(c); });
 act('newProj', () => { if (confirm('Start a new design? (Your current one stays in Projects.)')) { archiveSession(); openState(defaults(), null); } });
 function archiveSession() { // keep an unnamed last session so starting fresh never loses work
   try { const m = JSON.parse(kvGet(META) || '{}'), raw = kvGet(STORE); if (!raw || m.projId) return;
-    const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
+    const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !(st.images || []).length && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
     const a = readProjs(); a.unshift({ id: uid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
 function openState(st, id, keepLast) { if (!keepLast) archiveSession(); S = sanitize(st); projId = id; sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false }; fixSel(); hist.stack = []; hist.i = -1; closeHome(); update(); commit(); fitView(); saveNow(); }
 const slug = t => (String(t || '').normalize('NFKD').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('') || '').slice(0, 20);
@@ -678,7 +700,7 @@ $('imgFile').addEventListener('change', e => {
   const r = new FileReader();
   r.onload = () => {
     const el = new Image(); let src = r.result;
-    el.onload = () => { if (!el.dataset.shrunk) { const out = shrinkImg(el, file); if (out) { el.dataset.shrunk = 1; src = out; el.src = out; return; } } imgEls.set(src, el); const bgp = sel.slot === 2, ni = Object.assign(imgDefaults(), { src, x: C, y: C, size: bgp ? 900 : 200, clip: !bgp, clipMode: bgp ? 'free' : 'clip' }); setIM(ni); if (!bgp) Object.assign(ni, fitInside(ni)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
+    el.onload = () => { if (!el.dataset.shrunk) { const out = shrinkImg(el, file); if (out) { el.dataset.shrunk = 1; src = out; el.src = out; return; } } imgEls.set(src, el); if (!IM()) { addImageLayer.noPick = 1; const im = Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (S.images.length + 1), behind: false, src: null }); S.images.push(im); sel.slot = im.id; } const old = IM(), bgp = !!old.behind, ni = Object.assign(imgDefaults(), { id: old.id, name: old.name, behind: bgp, src, x: C, y: C, size: bgp ? 900 : 200, clip: !bgp, clipMode: bgp ? 'free' : 'clip' }); setIM(ni); if (!bgp) Object.assign(ni, fitInside(ni)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
     el.onerror = () => alert('Could not read that image.'); el.src = src;
   };
   r.readAsDataURL(file); e.target.value = '';
@@ -766,7 +788,7 @@ stage.addEventListener('pointerdown', e => {
     openSec('sec-letter');
   } else if (k === 'sh') { const sh = S.shapes.find(s => s.id === t.dataset.id); sel.shape = sh.id; sel.orn = null; sel.letters = []; fixSel(); drag = { obj: sh, x0: sh.x, y0: sh.y, p }; if (S.shapes.length > 1) openSec('sec-shape'); }
   else if (k === 'orn') { sel.orn = t.dataset.id; sel.letters = []; const o = curOrn(); drag = { obj: o, x0: o.x, y0: o.y, p, orn: true }; openSec('sec-orn'); }
-  else if (k === 'img') { sel.slot = +(t.dataset.slot || (t.closest('[data-slot]') || {dataset:{}}).dataset.slot || 1); sel.img = true; sel.orn = null; sel.letters = []; const im = IM(); drag = { obj: im, x0: im.x, y0: im.y, p }; openSec('sec-img'); }
+  else if (k === 'img') { sel.slot = t.dataset.slot || (t.closest('[data-slot]') || { dataset: {} }).dataset.slot || null; sel.img = true; sel.orn = null; sel.letters = []; const im = IM(); drag = { obj: im, x0: im.x, y0: im.y, p }; openSec('sec-img'); }
   else { sel.orn = null; if (!additive(e)) sel.letters = []; drag = { mq: true, p, cx: e.clientX, cy: e.clientY }; }
   drag.sx = e.clientX; drag.sy = e.clientY;
   update(); // drag state lives in JS, not in the (re-rendered) DOM node
@@ -911,9 +933,8 @@ function laserItems() {
     if (b.fillOn) it.push({ key: pre + 'fill', part: 'fill', sh, name: nm + 'Shape fill', def: 'off' });
     for (const L of S.layers) if (L.text && shapeOf(L) === sh) it.push({ key: 't:' + L.id, sh, name: nm + 'Text: ' + L.text, def: 'etch' }); });
   if (S.ornaments.length) it.push({ key: 'orn', name: 'Ornaments', def: 'etch' });
-  const im2 = S.image2; if (im2) it.unshift({ key: 'img2', name: 'Background picture' + (im2.mode === 'trace' ? ' (trace)' : im2.mode === 'sil' ? ' (silhouette)' : ''), def: im2.mode === 'orig' ? 'image' : 'etch' });
-  if (S.image) it.push({ key: 'img', name: 'Centre image' + (S.image.mode === 'trace' ? ' (trace)' : S.image.mode === 'sil' ? ' (silhouette)' : ''), def: S.image.mode === 'orig' ? 'image' : 'etch' });
-  const z = x => x.key === 'img2' ? 0 : x.part === 'fill' && !x.sh.base.fillAbove ? 1 : x.key === 'img' ? 2 : x.part === 'fill' ? 3 : 4; // same stacking as the design
+  S.images.filter(im => im.src && im.visible !== false).forEach(im => it.push({ key: 'img:' + im.id, im, name: (im.name || 'Image') + (im.mode === 'trace' ? ' (trace)' : im.mode === 'sil' ? ' (silhouette)' : ''), def: im.mode === 'orig' ? 'image' : 'etch' }));
+  const z = x => x.im ? (x.im.behind ? 0 : 2) : x.part === 'fill' && !x.sh.base.fillAbove ? 1 : x.part === 'fill' ? 3 : 4; // same stacking as the design
   return it.map((x, i) => [x, i]).sort((p, q) => z(p[0]) - z(q[0]) || p[1] - q[1]).map(p => p[0]);
 }
 const roleOf = it => S.laser[it.key] || it.def;
@@ -936,8 +957,8 @@ function laserPart0(it, kind) {
   if (k === 'fill') return `<path d="${ringD(0)}"${kind === 'pic' ? ` fill="${b.fill}"` : ''}/>`;
   if (k === 'orn') return S.ornaments.map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' ? ` fill="${o.color}"` : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
   if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? (L.style === 'hollow' ? ` fill="none" stroke="${L.color}" stroke-width="2.5"` : ` fill="${L.color}"`) : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
-  if ((k === 'img' && S.image) || (k === 'img2' && S.image2)) {
-    const im = k === 'img2' ? S.image2 : S.image, pr = procImage(im), vec = pr && pr.paths;
+  if (k.startsWith('img:') && (it.im || S.images.find(i => 'img:' + i.id === k))) {
+    const im = it.im || S.images.find(i => 'img:' + i.id === k), pr = procImage(im), vec = pr && pr.paths;
     const cm = clipOf(im); if (cut && (cm === 'clip' || cm === 'clipout' || !vec)) return cm === 'clip' || cm === 'clipout' ? clipEl(im, cm === 'clip' ? -1 : 1) : `<path d="${imgBox(im)}"/>`;
     if (vec && (cut || kind === 'fill')) { const s = im.size / Math.max(pr.w, pr.h);
       return imgWrap(cut ? { clipMode: 'free' } : im, `<g transform="translate(${f2(im.x - pr.w * s / 2)} ${f2(im.y - pr.h * s / 2)}) scale(${+s.toFixed(5)})" fill-rule="evenodd">${pr.paths.map(d => `<path d="${d}"/>`).join('')}</g>`, 'wflz' + uid()); }
@@ -1009,10 +1030,10 @@ function pngDpi(u, dpi) { // insert a pHYs chunk (pixels per metre) right after 
   const o = new Uint8Array(u.length + 21); o.set(u.subarray(0, 33)); o.set(c, 33); o.set(u.subarray(33), 54); return o;
 }
 // Build the list of steps (one file each). Every file is the same W x H mm page, origin = bottom-left corner.
-async function imgReady() { for (const im of [S.image, S.image2]) await imgReady1(im); }
+async function imgReady() { for (const im of S.images) if (im.src) await imgReady1(im); }
 async function imgReady1(im) { if (!im) return; const need = !(im.mode === 'orig' && !im.removeBg && !(im.whiteLvl < 255));
   for (let i = 0; i < 100; i++) { const el = loadedImg(im.src); if (el && (!need || procImage(im))) return; await new Promise(r => setTimeout(r, 100)); }
-  throw new Error('The centre picture is still loading - try again in a moment.'); }
+  throw new Error('A picture is still loading - try again in a moment.'); }
 async function laserSteps() { await imgReady();
   const W = +$('lzW').value, H = +$('lzH').value, dpi = +$('lzDpi').value || 254, marks = $('lzMarks').checked;
   if (!(W >= 5 && H >= 5)) throw new Error('Enter the size in mm.');
@@ -1090,7 +1111,7 @@ function lzStepsUI(st) {
 }
 $('lzSteps') && $('lzSteps').addEventListener('click', e => { const i = e.target.dataset.lzdl; if (i == null || !lzLast) return; const s = lzLast[+i];
   download(lzBlob(s), s.file); });
-function laserKeyOfSel() { return sel.img ? (sel.slot === 2 ? 'img2' : 'img') : sel.orn ? 'orn' : sel.letters.length ? 't:' + sel.letters[0].l : null; }
+function laserKeyOfSel() { return sel.img ? 'img:' + sel.slot : sel.orn ? 'orn' : sel.letters.length ? 't:' + sel.letters[0].l : null; }
 function laserUI() {
   const box = $('laserList'); if (!box || box.contains(document.activeElement)) return;
   const sk = laserKeyOfSel();
@@ -1117,7 +1138,18 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW failed', err)));
+const APP_VERSION = 'v25';
+$('homeVer').textContent = 'Wayland Forge ' + APP_VERSION;
+$('updBtn').onclick = () => location.reload();
+if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) $('updBar').hidden = false; });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    const chk = () => reg.update().catch(() => {}); chk(); setInterval(chk, 30 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') chk(); });
+    reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) $('updBar').hidden = false; }); });
+  }).catch(err => console.warn('SW failed', err));
+});
 
 // ---------- boot ----------
 window.WF = { showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
