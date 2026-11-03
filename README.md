@@ -27,4 +27,4 @@ Open **https://warwicklewis1970-oss.github.io/wayland-forge/** in Chrome, Edge o
 Once opened, it works offline. Your designs autosave in the browser. To keep a copy, use **Project → Save**.
 
 ## Laser pack (LaserGRBL)
-Open **Laser (LaserGRBL)**, give each part a job (Image, Etch, Cut inside edge, Cut outside edge or Skip), type the real size in mm and tap **Export laser pack**. The zip holds numbered files (image PNG, etch PNG + optional etch SVG, cut-inside SVG, cut-outside SVG) on one shared mm page plus a README.txt. In LaserGRBL: File > Open File for job 1, then File > Append File for each next job in number order.
+Open **Laser (LaserGRBL)**, give each part a job (Image, Etch, Cut inside edge, Cut outside edge or Skip), type the real size in mm and download the steps. Every file is the same mm page anchored at the laser's 0,0. Letters, ornaments (filled or hollow) and cuts are SVG, which LaserGRBL positions from the page itself, so they always line up: File > Open File > speed and power > Create!. Only a photo is a PNG: tick Autosize, press DPI, set Offset X 0 / Y 0.
