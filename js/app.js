@@ -656,7 +656,7 @@ act('saveToProjects', () => { const n = projName(); if (n) { saveNow(); toast('S
 // ---- home / start screen ----
 function showHome(view) { saveNow(); homeOpen = true; document.body.classList.add('home'); $('home').hidden = false; homeView(view || 'main'); }
 function closeHome() { homeOpen = false; nameBtnUI(); document.body.classList.remove('home'); $('home').hidden = true; }
-function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; if (v === 'projs') listProjs(); }
+function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; window.wfNewsShow && wfNewsShow(); if (v === 'projs') listProjs(); }
 const ago = t => { if (!t) return ''; const d = new Date(t); return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
 function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(kvGet(META) || '{}'); } catch (e) { /* */ }
   const last = !m.projId && !m.archived && kvGet(STORE);
@@ -1211,9 +1211,16 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v33';
-const WHATS_NEW = 'What changed in v33 (laser): 1) The photo and filled-letter steps are now G-code files (.nc) instead of PNG pictures. In LaserGRBL: File > Open File > pick it > Start. No picture box opens, so there is no size, offset or Autosize to set, and it lines up with the cut by itself. 2) Speed and power for those two steps are set in the app Laser panel (Photo speed/power, Letter speed/power, starting at 3000 and 50%) and written into the file; the numbers are in the file name. To fine-tune at the laser, use the S (power) and G1 (speed) buttons in LaserGRBL\'s bottom bar. 3) Laser max S ($30) box, default 1000: power % is worked out from it. 4) The old PNG files are still there: set Picture steps as to PNG. SVG files (outline etch and cuts) are unchanged.';
-$('homeNews') && ($('homeNews').textContent = WHATS_NEW); $('updNews') && ($('updNews').textContent = 'v33: photo and filled letters are now .nc G-code - open and Start, nothing to type. Speed/power set in the app.');
+const APP_VERSION = 'v34';
+const WHATS_NEW = 'v34: no laser file changes (this note is now a small bar you can close). What changed in v33 (laser): 1) The photo and filled-letter steps are now G-code files (.nc) instead of PNG pictures. In LaserGRBL: File > Open File > pick it > Start. No picture box opens, so there is no size, offset or Autosize to set, and it lines up with the cut by itself. 2) Speed and power for those two steps are set in the app Laser panel (Photo speed/power, Letter speed/power, starting at 3000 and 50%) and written into the file; the numbers are in the file name. To fine-tune at the laser, use the S (power) and G1 (speed) buttons in LaserGRBL\'s bottom bar. 3) Laser max S ($30) box, default 1000: power % is worked out from it. 4) The old PNG files are still there: set Picture steps as to PNG. SVG files (outline etch and cuts) are unchanged.';
+$('homeNews') && ($('homeNews').textContent = WHATS_NEW);
+(() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
+  const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
+  $('homeNewsTap').textContent = "What's new in " + APP_VERSION + ' – tap to read';
+  $('homeNewsTap').onclick = () => { $('homeNewsBody').hidden = !$('homeNewsBody').hidden; };
+  $('homeNewsClose').onclick = () => { $('homeNewsBody').hidden = true; };
+  $('homeNewsX').onclick = () => { localStorage.setItem(k, APP_VERSION); w.hidden = true; };
+  window.wfNewsShow = show; show(); })(); $('updNews') && ($('updNews').textContent = 'v33: photo and filled letters are now .nc G-code - open and Start, nothing to type. Speed/power set in the app.');
 $('homeVer').textContent = 'Wayland Forge ' + APP_VERSION;
 $('updBtn').onclick = () => location.reload();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {

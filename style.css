@@ -157,4 +157,8 @@ button.mini{padding:1px 7px;font-size:11px;margin-left:6px}
 #updBar[hidden]{display:none}#updBar button{background:#1d1a17;color:#fff;border-radius:14px}
 .lzdo{font-size:13px}.lzval{display:inline-block;background:#ffe9a8;color:#222;padding:1px 6px;border-radius:4px;font-size:15px}
 
-.hnews{max-width:520px;margin:8px auto 0;padding:8px 12px;background:#fff6d6;color:#333;border-radius:8px;font-size:13px;line-height:1.4;text-align:left}
+.hnews{position:static;max-width:460px;margin:10px auto 0;background:#fff6d6;color:#333;border-radius:8px;font-size:13px;line-height:1.4;text-align:left}
+.hnews[hidden]{display:none}.hnrow{display:flex;align-items:center}
+.hntap{flex:1;min-width:0;background:none;border:0;color:#333;text-align:left;padding:6px 10px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.hnx{background:none;border:0;color:#333;padding:6px 10px;font-size:14px}
+.hnbody{max-height:40vh;overflow:auto;padding:0 10px 8px}.hnclose{margin-top:6px;font-size:12px}
