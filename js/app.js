@@ -12,6 +12,8 @@ const FONTS = [
 const SCRIPT = new Set(FONTS.filter(f => f[3]).map(f => f[0]));
 const C = 500, ART = 1000, STORE = 'wayland-forge-project-v1';
 const fonts = {};
+// Google Drive sync: OAuth client ID (Google Cloud console > Credentials > OAuth client, type Web application).
+const GOOGLE_CLIENT_ID = '691597600502-ldoveuit86b5c0j5gfhhnrq1ok5a35cg.apps.googleusercontent.com';
 const $ = id => document.getElementById(id);
 const f2 = n => Math.round(n * 100) / 100;
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -610,10 +612,14 @@ function kvSet(k, v) { mem[k] = v; kvPut(k, v).catch(e => { console.warn(e); if 
 function kvDel(k) { delete mem[k]; kvPut(k, null).catch(() => {}); }
 const mb = n => (n / 1048576 < 0.1 ? '<0.1' : (n / 1048576).toFixed(1)) + ' MB';
 let homeOpen = true, projId = null;
+const pid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); // stable, unique across devices
 const readProjs = () => { try { const a = JSON.parse(kvGet(PROJS) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
-const writeProjs = a => { try { return kvSet(PROJS, JSON.stringify(a)); } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
+function migrateProjs() { const a = readProjs(), seen = new Set(); let ch = false; // give every project a unique id + updated time, keeping all of them
+  for (const x of a) { if (!x.id || x.id === 'last' || seen.has(x.id)) { x.id = pid(); ch = true; } seen.add(x.id); if (!(x.updated > 0)) { x.updated = Date.now(); ch = true; } if (!x.name) { x.name = 'Untitled'; ch = true; } }
+  if (ch) writeProjs(a, true); }
+const writeProjs = (a, quiet) => { try { const ok = kvSet(PROJS, JSON.stringify(a)); if (ok && !quiet && window.wfSyncSoon) wfSyncSoon(); return ok; } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
 function saveNow() { nameBtnUI(); if (homeOpen) return; try { kvSet(STORE, JSON.stringify(S)); kvSet(META, JSON.stringify({ projId, t: Date.now() })); } catch (e) { /* storage full (large image) */ }
-  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.state = S; x.updated = Date.now(); writeProjs(a); } } }
+  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x && JSON.stringify(x.state) !== JSON.stringify(S)) { x.state = S; x.updated = Date.now(); writeProjs(a); } } } // only a real change counts as newer (matters for sync)
 let saveT; function persist() { if (homeOpen) return; clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
 
 // ---------- control bindings ----------
@@ -666,26 +672,26 @@ act('newProj', () => { if (confirm('Start a new design? (Your current one stays 
 function archiveSession() { // keep an unnamed last session so starting fresh never loses work
   try { const m = JSON.parse(kvGet(META) || '{}'), raw = kvGet(STORE); if (!raw || m.projId) return;
     const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !(st.images || []).length && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
-    const a = readProjs(); a.unshift({ id: uid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
+    const a = readProjs(); a.unshift({ id: pid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
 function openState(st, id, keepLast) { if (!keepLast) archiveSession(); S = sanitize(st); projId = id; sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false }; fixSel(); hist.stack = []; hist.i = -1; closeHome(); update(); commit(); fitView(); saveNow(); }
 const slug = t => (String(t || '').normalize('NFKD').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('') || '').slice(0, 20);
 function designName() { return projName() || S.name || ''; }
 function nameBtnUI() { const b = $('nameBtn'); if (b) { const n = designName(); b.textContent = (n || 'Untitled') + ' ✎'; b.title = 'Design name (used for file names). Tap to rename.'; } }
 function setDesignName(n) { n = String(n || '').trim().slice(0, 60); if (!n) return false;
   if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.name = n; x.updated = Date.now(); writeProjs(a); } }
-  else { const a = readProjs(), id = uid(); a.unshift({ id, name: n, updated: Date.now(), state: S }); if (writeProjs(a)) projId = id; }
+  else { const a = readProjs(), id = pid(); a.unshift({ id, name: n, updated: Date.now(), state: S }); if (writeProjs(a)) projId = id; }
   S.name = n; saveNow(); return true; }
 function fileBase() { let n = designName();
   if (!n) { const top = slug(S.layers[0] && S.layers[0].text) || 'MyBadge'; const a = prompt('Name this design (used for file names):', top); if (a == null) throw new Error('Export cancelled - no design name.'); setDesignName(slug(a) || top); n = designName(); }
   return slug(n) || 'MyBadge'; }
 function projName() { const x = projId && readProjs().find(q => q.id === projId); return x ? x.name : null; }
 $('nameBtn') && $('nameBtn').addEventListener('click', () => { const n = prompt('Design name (used for file names):', designName() || slug(S.layers[0] && S.layers[0].text) || 'MyBadge'); if (n != null && setDesignName(n)) toast('Name: ' + designName()); });
-act('saveToProjects', () => { const n = projName(); if (n) { saveNow(); toast('Saved to Projects: ' + n); return; }
-  const name = prompt('Name this project:', (S.layers[0] && S.layers[0].text) || 'My badge'); if (!name) return; const a = readProjs(), id = uid(); a.unshift({ id, name: name.trim().slice(0, 60), updated: Date.now(), state: S }); if (writeProjs(a)) { projId = id; saveNow(); toast('Saved to Projects: ' + name); } });
+act('saveToProjects', () => { const n = projName(); if (n) { saveNow(); toast('Saved to Projects: ' + n); window.wfSyncSoon && wfSyncSoon(1); return; }
+  const name = prompt('Name this project:', (S.layers[0] && S.layers[0].text) || 'My badge'); if (!name) return; const a = readProjs(), id = pid(); a.unshift({ id, name: name.trim().slice(0, 60), updated: Date.now(), state: S }); if (writeProjs(a)) { projId = id; saveNow(); toast('Saved to Projects: ' + name); window.wfSyncSoon && wfSyncSoon(1); } });
 // ---- home / start screen ----
 function showHome(view) { saveNow(); homeOpen = true; document.body.classList.add('home'); $('home').hidden = false; homeView(view || 'main'); }
 function closeHome() { homeOpen = false; nameBtnUI(); document.body.classList.remove('home'); $('home').hidden = true; }
-function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; window.wfNewsShow && wfNewsShow(); if (v === 'projs') listProjs(); }
+function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; window.wfNewsShow && wfNewsShow(); if (v === 'projs') { listProjs(); window.wfSyncOpen && wfSyncOpen(); } }
 const ago = t => { if (!t) return ''; const d = new Date(t); return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
 function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(kvGet(META) || '{}'); } catch (e) { /* */ }
   const last = !m.projId && !m.archived && kvGet(STORE);
@@ -695,8 +701,8 @@ function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(k
   $('projList').innerHTML = html || '<li class="hint">No saved projects yet. Start a New design and tap <b>Save to Projects</b>.</li>'; }
 $('projList').addEventListener('click', e => { const b = e.target.closest('[data-pa]'); if (!b) return; const id = b.closest('li').dataset.pid, a = readProjs(), x = a.find(q => q.id === id);
   if (b.dataset.pa === 'open') { if (id === 'last') { try { openState(JSON.parse(kvGet(STORE)), null, true); } catch (er) { alert('Could not open the last session.'); } } else if (x) openState(x.state, x.id); }
-  else if (b.dataset.pa === 'ren' && x) { const n = prompt('Rename project:', x.name); if (n) { x.name = n.trim().slice(0, 60); writeProjs(a); listProjs(); } }
-  else if (b.dataset.pa === 'del') { if (!confirm('Delete "' + (x ? x.name : 'Last session') + '"? This cannot be undone.')) return; if (id === 'last') { kvDel(STORE); kvDel(META); } else { writeProjs(a.filter(q => q.id !== id)); if (projId === id) projId = null; } listProjs(); } });
+  else if (b.dataset.pa === 'ren' && x) { const n = prompt('Rename project:', x.name); if (n) { x.name = n.trim().slice(0, 60); x.updated = Date.now(); writeProjs(a); listProjs(); } }
+  else if (b.dataset.pa === 'del') { if (!confirm('Delete "' + (x ? x.name : 'Last session') + '"? This cannot be undone.')) return; if (id === 'last') { kvDel(STORE); kvDel(META); } else { writeProjs(a.filter(q => q.id !== id)); if (projId === id) projId = null; window.wfSyncDel && wfSyncDel(id); } listProjs(); } });
 $('homeNew').onclick = () => { archiveSession(); openState(defaults(), null); window.dispatchEvent(new Event('wf-newdesign')); };
 $('homeProjects').onclick = () => homeView('projs');
 $('homeBack').onclick = () => homeView('main');
@@ -1323,8 +1329,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v39';
-const WHATS_NEW = "v39 (hanging hole): 1) New Hanging hole option in the Ornaments section: tick it on, type the diameter in mm (starts at 4), drag the circle on the design, or tap Snap to top to centre it near the top point with 5 mm to the edge. 2) The app warns in red if there is less than 2 mm of wood between the hole and the outside edge. 3) Laser: the hole is cut in the Cut inside step (added if your job didn't have one), with the same Power / Speed / Passes settings (100% / 1000 / 3 passes to start), and always before the outside cut so the piece doesn't move. 4) Print and POD files (SVG, PDF, PNG) show the hole as a thin grey outline. Nothing else changed: no defaults, no other laser files, sizes or positions.";
+const APP_VERSION = 'v40';
+const WHATS_NEW = "v40 (sync): Projects can sync between phone and laptop through your Google Drive. In Projects tap Connect Google Drive once on each device; after that Save to Projects uploads in the background and the other device picks it up when you open the app or Projects (or tap Sync now). Nothing changed in the laser files, print files, sizes or settings.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1345,13 +1351,107 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEve
   }).catch(err => console.warn('SW failed', err));
 });
 
+// ---------- Google Drive sync (appDataFolder: hidden folder only this app can see) ----------
+// One Drive file per project: wfp-<id>.json holding the whole project (pictures included).
+const SYNCK = 'wf-sync-v1', GAPI = 'https://www.googleapis.com', GSCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const sy = { tok: null, exp: 0, tc: null, busy: null, again: false, state: 'off', err: '', t: null, big: 4 * 1048576 };
+const sm = () => { try { const m = JSON.parse(localStorage.getItem(SYNCK) || '{}'); m.files = m.files || {}; m.del = m.del || []; return m; } catch (e) { return { files: {}, del: [] }; } };
+const smSet = m => localStorage.setItem(SYNCK, JSON.stringify(m));
+function loadGis() { if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+  if (sy.gis) return sy.gis; sy.gis = new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = ok; s.onerror = () => { sy.gis = null; no(new Error('offline')); }; document.head.appendChild(s); }); return sy.gis; }
+function getToken(interactive) { // interactive: user tapped a button (pop-up allowed); otherwise silent renew
+  if (sy.tok && Date.now() < sy.exp - 60000) return Promise.resolve(sy.tok);
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID === 'REPLACE_ME') return Promise.reject(new Error('setup'));
+  return loadGis().then(() => new Promise((ok, no) => {
+    const tc = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: GSCOPE,
+      callback: r => { if (r && r.access_token) { sy.tok = r.access_token; sy.exp = Date.now() + (r.expires_in || 3600) * 1000; ok(sy.tok); } else no(new Error('auth')); },
+      error_callback: () => no(new Error('auth')) });
+    const m = sm(); tc.requestAccessToken(interactive ? { prompt: m.connected ? '' : 'consent' } : { prompt: '' });
+    if (!interactive) setTimeout(() => no(new Error('auth')), 15000);
+  })); }
+async function gfetch(url, opt = {}) { const t = await getToken(false);
+  const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + t } });
+  if (r.status === 401) { sy.tok = null; throw new Error('auth'); }
+  if (!r.ok && r.status !== 404) throw new Error('http ' + r.status); return r; }
+async function driveList() { let out = [], pt = '';
+  do { const r = await gfetch(GAPI + '/drive/v3/files?spaces=appDataFolder&pageSize=1000&fields=' + encodeURIComponent('nextPageToken,files(id,name,appProperties)') + (pt ? '&pageToken=' + pt : ''));
+    const j = await r.json(); out = out.concat(j.files || []); pt = j.nextPageToken || ''; } while (pt);
+  return out.filter(f => /^wfp-.+\.json$/.test(f.name)); }
+async function driveGet(fid) { const r = await gfetch(GAPI + '/drive/v3/files/' + fid + '?alt=media'); if (r.status === 404) return null; return r.json(); }
+async function drivePut(x, fid) { // multipart for normal projects, resumable for big ones (large pictures)
+  const meta = { name: 'wfp-' + x.id + '.json', mimeType: 'application/json', appProperties: { pid: x.id, updated: String(x.updated) } };
+  if (!fid) meta.parents = ['appDataFolder'];
+  const body = JSON.stringify(x), base = GAPI + '/upload/drive/v3/files' + (fid ? '/' + fid : ''), meth = fid ? 'PATCH' : 'POST';
+  if (body.length > sy.big) {
+    const r = await gfetch(base + '?uploadType=resumable&fields=id', { method: meth, headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json' }, body: JSON.stringify(meta) });
+    const loc = r.headers.get('Location'); if (!loc) throw new Error('upload');
+    const r2 = await fetch(loc, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body }); if (!r2.ok) throw new Error('upload ' + r2.status); return (await r2.json()).id; }
+  const bd = 'wfsync' + Math.random().toString(36).slice(2);
+  const mp = '--' + bd + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + bd + '\r\nContent-Type: application/json\r\n\r\n' + body + '\r\n--' + bd + '--';
+  const r = await gfetch(base + '?uploadType=multipart&fields=id', { method: meth, headers: { 'Content-Type': 'multipart/related; boundary=' + bd }, body: mp });
+  if (r.status === 404) return drivePut(x, null); return (await r.json()).id; }
+const shortDay = t => new Date(t).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+async function syncRun() { // pull newer, push changed, apply deletions; newest save wins, both kept if both changed
+  const m = sm(), a = readProjs(), byId = new Map(a.map(x => [x.id, x])); let changed = false;
+  for (const id of m.del.slice()) { const f = m.files[id]; if (f && f.fid) await gfetch(GAPI + '/drive/v3/files/' + f.fid, { method: 'DELETE' }); delete m.files[id]; m.del = m.del.filter(q => q !== id); smSet(m); }
+  const remote = await driveList(), seen = new Set();
+  for (const f of remote) { const id = (f.appProperties && f.appProperties.pid) || f.name.slice(4, -5), ru = +(f.appProperties && f.appProperties.updated) || 0; seen.add(id);
+    const x = byId.get(id), rec = m.files[id], base = rec ? rec.u : 0;
+    if (!x) { if (rec && rec.u >= ru) { await gfetch(GAPI + '/drive/v3/files/' + f.id, { method: 'DELETE' }); delete m.files[id]; continue; } // deleted here earlier
+      const p = await driveGet(f.id); if (p && p.state) { p.id = id; p.updated = p.updated || ru; a.push(p); byId.set(id, p); m.files[id] = { fid: f.id, u: p.updated }; changed = true; } continue; }
+    if (ru === x.updated) { m.files[id] = { fid: f.id, u: ru }; continue; }
+    const localCh = x.updated > base, remoteCh = ru > base;
+    if (remoteCh && !localCh) { const p = await driveGet(f.id); if (p && p.state) { Object.assign(x, { name: p.name, state: p.state, updated: p.updated || ru }); m.files[id] = { fid: f.id, u: x.updated }; changed = true; } continue; }
+    if (localCh && !remoteCh) { m.files[id] = { fid: await drivePut(x, f.id), u: x.updated }; continue; }
+    // both devices changed it since the last sync: keep both, newest keeps the name
+    const p = await driveGet(f.id); if (!p || !p.state) continue; p.updated = p.updated || ru;
+    const older = p.updated > x.updated ? { ...x } : p, newer = p.updated > x.updated ? p : x;
+    Object.assign(x, { name: newer.name, state: newer.state, updated: newer.updated });
+    const cp = { id: pid(), name: (older.name + ' (other device copy ' + shortDay(older.updated) + ')').slice(0, 90), updated: older.updated, state: older.state };
+    a.splice(a.indexOf(x) + 1, 0, cp); byId.set(cp.id, cp); changed = true;
+    m.files[id] = { fid: newer === p ? f.id : await drivePut(x, f.id), u: x.updated };
+    m.files[cp.id] = { fid: await drivePut(cp, null), u: cp.updated }; seen.add(cp.id); }
+  for (const x of a.slice()) { if (seen.has(x.id)) continue;
+    const rec = m.files[x.id];
+    if (rec && rec.fid && !seen.has(x.id) && x.updated <= rec.u) { a.splice(a.indexOf(x), 1); delete m.files[x.id]; changed = true; if (projId === x.id) projId = null; continue; } // deleted on the other device
+    if (!rec || x.updated > rec.u || !seen.has(x.id)) m.files[x.id] = { fid: await drivePut(x, null), u: x.updated }; }
+  m.last = Date.now(); m.connected = true; smSet(m);
+  if (changed) { a.sort((p, q) => q.updated - p.updated); writeProjs(a, true); if (!$('homeProjs').hidden) listProjs(); }
+  return changed; }
+function syncNow(interactive) { const m = sm(); if (!m.connected && !interactive) return Promise.resolve();
+  if (!navigator.onLine) { sy.state = 'offline'; syncUI(); return Promise.resolve(); }
+  if (sy.busy) { sy.again = true; return sy.busy; }
+  sy.state = 'busy'; syncUI();
+  sy.busy = (interactive ? getToken(true) : Promise.resolve()).then(() => syncRun()).then(() => { sy.state = 'ok'; },
+    e => { const msg = String(e && e.message); sy.state = msg === 'setup' ? 'setup' : (msg === 'auth' ? 'auth' : (!navigator.onLine || msg === 'offline' || e instanceof TypeError ? 'offline' : 'err')); sy.err = msg; console.warn('sync', e); })
+    .finally(() => { sy.busy = null; syncUI(); if (sy.again) { sy.again = false; syncSoon(); } });
+  return sy.busy; }
+function syncSoon(fast) { if (!sm().connected) return; clearTimeout(sy.t); sy.t = setTimeout(() => syncNow(false), fast ? 300 : 6000); if (sy.state !== 'busy') { sy.state = navigator.onLine ? sy.state : 'offline'; syncUI(); } }
+const agoShort = t => { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : ago(t); };
+function syncUI() { const box = $('syncBox'); if (!box) return; const m = sm();
+  $('syncConnect').hidden = !!m.connected; $('syncNow').hidden = !m.connected;
+  const st = $('syncStatus'); st.className = 'syncst ' + sy.state;
+  st.textContent = !m.connected ? (sy.state === 'setup' ? 'Drive sync is not set up yet in this version.' : sy.state === 'auth' ? 'Could not connect – try again.' : 'Keep projects in step between your phone and laptop.')
+    : sy.state === 'busy' ? '☁ Syncing…' : sy.state === 'offline' ? 'Offline – will sync later' : sy.state === 'auth' ? 'Sign in again – tap Sync now to reconnect'
+    : sy.state === 'err' ? 'Sync problem – tap Sync now to try again' : sy.state === 'setup' ? 'Drive sync is not set up yet in this version.' : m.last ? '☁ Synced ' + agoShort(m.last) : '☁ Connected'; }
+window.wfSyncSoon = syncSoon;
+window.wfSyncDel = id => { const m = sm(); if (!m.connected) return; if (m.files[id]) { m.del.push(id); smSet(m); } syncSoon(1); };
+window.wfSyncOpen = () => { syncUI(); syncNow(false); };
+$('syncConnect').onclick = () => syncNow(true).then(() => { if (sy.state === 'ok') toast('Google Drive connected'); });
+$('syncNow').onclick = () => syncNow(sy.state === 'auth' || !sy.tok);
+window.addEventListener('online', () => syncSoon(1)); window.addEventListener('offline', () => { sy.state = 'offline'; syncUI(); });
+setInterval(() => { if (!$('homeProjs').hidden) syncUI(); }, 30000);
+function syncBoot() { syncUI(); if (sm().connected) syncNow(false); }
+window.WF_SYNC = { now: syncNow, meta: sm, get state() { return sy.state; }, set big(v) { sy.big = v; }, forget() { sy.tok = null; sy.exp = 0; } };
+
 // ---------- boot ----------
 window.WF = { showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
 (async () => {
-  await kvLoad();
+  await kvLoad(); migrateProjs();
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
   // start on the home screen; projects open only from Projects
   $('loading').remove(); update(); commit();
   document.body.dataset.ready = '1';
+  syncBoot();
 })().catch(err => { $('loading').textContent = 'Failed to load fonts: ' + err.message; console.error(err); });
 })();

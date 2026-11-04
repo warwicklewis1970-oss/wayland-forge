@@ -1,5 +1,5 @@
 // Wayland Forge service worker: cache everything for offline use.
-const VERSION = 'wayland-forge-v39';
+const VERSION = 'wayland-forge-v40';
 const ASSETS = [
   './', './index.html', './style.css', './js/app.js', './js/blacksmith.js', './js/tour.js', './manifest.webmanifest',
   './vendor/opentype.min.js', './vendor/jspdf.umd.min.js', './vendor/svg2pdf.umd.min.js', './vendor/imagetracer.js',
@@ -31,7 +31,9 @@ self.addEventListener('activate', e => {
 self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(); });
 self.addEventListener('fetch', e => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const u = new URL(req.url);
+  // never touch Google sign-in / Drive traffic (and anything else off-site)
+  if (req.method !== 'GET' || u.origin !== location.origin || /(^|\.)(google\.com|googleapis\.com|gstatic\.com)$/.test(u.hostname)) return;
   e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
     if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
     return res;

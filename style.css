@@ -172,3 +172,7 @@ button.mini{padding:1px 7px;font-size:11px;margin-left:6px}
 .lzacc>summary{justify-content:flex-start;text-transform:none;letter-spacing:normal;font-size:16px;line-height:1.3}.lzacc>summary::after{margin-left:auto;font-size:18px;padding-left:8px}.lzacc[open]>summary{border-bottom:1px solid #8884}.lzacc .lzcb select{width:160px!important}
 .lzbbtn button{min-height:44px;padding:0 20px;font-size:16px}
 .holewarn{color:#d0342c;font-weight:600}
+
+.syncbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px;font-size:12px}
+.syncst{flex:1 1 180px;color:var(--dim);text-align:left}
+.syncst.ok{color:#2e8b57}.syncst.offline,.syncst.auth,.syncst.err{color:#c77a00}
