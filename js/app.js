@@ -673,7 +673,7 @@ act('newProj', () => { if (confirm('Start a new design? (Your current one stays 
 function archiveSession() { // keep an unnamed last session so starting fresh never loses work
   try { const m = JSON.parse(kvGet(META) || '{}'), raw = kvGet(STORE); if (!raw || m.projId) return;
     const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !(st.images || []).length && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
-    const a = readProjs(); a.unshift({ id: pid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
+    const a = readProjs(); if (a.some(q => JSON.stringify(q.state) === JSON.stringify(st))) { kvSet(META, JSON.stringify({ projId: null, archived: true })); return; } a.unshift({ id: pid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
 function openState(st, id, keepLast) { if (!keepLast) archiveSession(); S = sanitize(st); projId = id; sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false }; fixSel(); hist.stack = []; hist.i = -1; closeHome(); update(); commit(); fitView(); saveNow(); }
 const slug = t => (String(t || '').normalize('NFKD').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('') || '').slice(0, 20);
 function designName() { return projName() || S.name || ''; }
@@ -687,8 +687,18 @@ function fileBase() { let n = designName();
   return slug(n) || 'MyBadge'; }
 function projName() { const x = projId && readProjs().find(q => q.id === projId); return x ? x.name : null; }
 $('nameBtn') && $('nameBtn').addEventListener('click', () => { const n = prompt('Design name (used for file names):', designName() || slug(S.layers[0] && S.layers[0].text) || 'MyBadge'); if (n != null && setDesignName(n)) toast('Name: ' + designName()); });
-act('saveToProjects', () => { const n = projName(); if (n) { saveNow(); toast('Saved to Projects: ' + n); window.wfSyncSoon && wfSyncSoon(1); return; }
-  const name = prompt('Name this project:', (S.layers[0] && S.layers[0].text) || 'My badge'); if (!name) return; const a = readProjs(), id = pid(); a.unshift({ id, name: name.trim().slice(0, 60), updated: Date.now(), state: S }); if (writeProjs(a)) { projId = id; saveNow(); toast('Saved to Projects: ' + name); window.wfSyncSoon && wfSyncSoon(1); } });
+function askDlg(msg, btns) { return new Promise(res => { const d = document.createElement('div'); d.className = 'wfask'; d.setAttribute('role', 'dialog');
+  d.innerHTML = '<div class="wfaskbox"><p></p><div class="wfaskbtn"></div></div>'; d.querySelector('p').textContent = msg;
+  btns.forEach(([k, t, cls]) => { const b = document.createElement('button'); b.textContent = t; if (cls) b.className = cls; b.onclick = () => { d.remove(); res(k); }; d.querySelector('.wfaskbtn').appendChild(b); });
+  d.addEventListener('click', e => { if (e.target === d) { d.remove(); res(null); } }); document.body.appendChild(d); }); }
+function saveAsNew() { const name = prompt('Name this project:', (projName() ? projName() + ' 2' : (S.layers[0] && S.layers[0].text) || 'My badge')); if (!name || !name.trim()) return;
+  const a = readProjs(), id = pid(), st = JSON.parse(JSON.stringify(S)); a.unshift({ id, name: name.trim().slice(0, 60), updated: Date.now(), state: st }); if (writeProjs(a)) { projId = id; saveNow(); toast('Saved to Projects: ' + name.trim()); window.wfSyncSoon && wfSyncSoon(1); } }
+act('saveToProjects', async () => { const n = projName();
+  if (!n) { const cur = JSON.stringify(S), same = readProjs().find(q => JSON.stringify(q.state) === cur); // identical project already saved: just link to it
+    if (same) { projId = same.id; saveNow(); toast('Already in Projects: ' + same.name); return; } return saveAsNew(); }
+  const k = await askDlg('Save this design', [['up', 'Update "' + n + '"', 'accent'], ['new', 'Save as new'], [null, 'Cancel']]);
+  if (k === 'up') { saveNow(); const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.updated = Date.now(); writeProjs(a); } toast('Updated: ' + n); window.wfSyncSoon && wfSyncSoon(1); }
+  else if (k === 'new') saveAsNew(); });
 // ---- home / start screen ----
 function showHome(view) { saveNow(); homeOpen = true; document.body.classList.add('home'); $('home').hidden = false; homeView(view || 'main'); }
 function closeHome() { homeOpen = false; nameBtnUI(); document.body.classList.remove('home'); $('home').hidden = true; }
@@ -1333,8 +1343,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v42';
-const WHATS_NEW = "v42: Apply to all ornaments button for Fill/Line. Laser files work the same as before.";
+const APP_VERSION = 'v43';
+const WHATS_NEW = "v43: Opening the app no longer asks you to sign in to Google – Drive sync only asks when you tap Sync now. Save asks Update or Save as new, no more piling-up copies, and a Remove duplicates button in Projects. Laser files are exactly the same as before.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1391,19 +1401,26 @@ const sm = () => { try { const m = JSON.parse(localStorage.getItem(SYNCK) || '{}
 const smSet = m => localStorage.setItem(SYNCK, JSON.stringify(m));
 function loadGis() { if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
   if (sy.gis) return sy.gis; sy.gis = new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = ok; s.onerror = () => { sy.gis = null; no(new Error('offline')); }; document.head.appendChild(s); }); return sy.gis; }
-function getToken(interactive) { // interactive: user tapped a button (pop-up allowed); otherwise silent renew
-  if (sy.tok && Date.now() < sy.exp - 60000) return Promise.resolve(sy.tok);
+const TOKK = 'wf-sync-tok';
+function tokLoad() { if (sy.tok && Date.now() < sy.exp - 60000) return sy.tok; try { const t = JSON.parse(localStorage.getItem(TOKK) || 'null'); if (t && t.tok && Date.now() < t.exp - 60000) { sy.tok = t.tok; sy.exp = t.exp; return sy.tok; } } catch (e) { /* */ } return null; }
+const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((ok, no) => setTimeout(() => no(new Error(msg || 'timeout')), ms))]);
+function getToken(interactive) { // only a button tap may show Google's pop-up; otherwise use the saved token (valid ~1 hour) or give up quietly
+  const t = tokLoad(); if (t) return Promise.resolve(t);
+  if (!interactive) return Promise.reject(new Error('auth'));
   if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID === 'REPLACE_ME') return Promise.reject(new Error('setup'));
-  return loadGis().then(() => new Promise((ok, no) => {
-    const tc = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: GSCOPE,
-      callback: r => { if (r && r.access_token) { sy.tok = r.access_token; sy.exp = Date.now() + (r.expires_in || 3600) * 1000; ok(sy.tok); } else no(new Error('auth')); },
+  return withTimeout(loadGis(), 20000, 'offline').then(() => withTimeout(new Promise((ok, no) => {
+    const m = sm(), tc = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: GSCOPE, login_hint: m.email || undefined,
+      callback: r => { if (r && r.access_token) { sy.tok = r.access_token; sy.exp = Date.now() + (r.expires_in || 3600) * 1000; try { localStorage.setItem(TOKK, JSON.stringify({ tok: sy.tok, exp: sy.exp })); } catch (e) { /* */ } ok(sy.tok); } else no(new Error('auth')); },
       error_callback: () => no(new Error('auth')) });
-    const m = sm(); tc.requestAccessToken(interactive ? { prompt: m.connected ? '' : 'consent' } : { prompt: '' });
-    if (!interactive) setTimeout(() => no(new Error('auth')), 15000);
-  })); }
+    tc.requestAccessToken({ prompt: m.connected ? '' : 'consent', login_hint: m.email || undefined });
+  }), 180000, 'auth')); }
+function tokForget() { sy.tok = null; sy.exp = 0; try { localStorage.removeItem(TOKK); } catch (e) { /* */ } }
+async function rememberEmail() { try { const m = sm(); if (m.email) return; const r = await gfetch(GAPI + '/drive/v3/about?fields=user(emailAddress)'); const j = await r.json(); const e = j && j.user && j.user.emailAddress; if (e) { const m2 = sm(); m2.email = e; smSet(m2); } } catch (e) { /* not important */ } }
+const idle = () => new Promise(r => setTimeout(r, 0));
 async function gfetch(url, opt = {}) { const t = await getToken(false);
-  const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + t } });
-  if (r.status === 401) { sy.tok = null; throw new Error('auth'); }
+  const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 90000);
+  let r; try { r = await fetch(url, { ...opt, signal: ac.signal, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + t } }); } catch (e) { throw new Error(ac.signal.aborted ? 'timeout' : 'offline'); } finally { clearTimeout(tm); }
+  if (r.status === 401) { tokForget(); throw new Error('auth'); }
   if (!r.ok && r.status !== 404) throw new Error('http ' + r.status); return r; }
 async function driveList() { let out = [], pt = '';
   do { const r = await gfetch(GAPI + '/drive/v3/files?spaces=appDataFolder&pageSize=1000&fields=' + encodeURIComponent('nextPageToken,files(id,name,appProperties)') + (pt ? '&pageToken=' + pt : ''));
@@ -1417,7 +1434,7 @@ async function drivePut(x, fid) { // multipart for normal projects, resumable fo
   if (body.length > sy.big) {
     const r = await gfetch(base + '?uploadType=resumable&fields=id', { method: meth, headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json' }, body: JSON.stringify(meta) });
     const loc = r.headers.get('Location'); if (!loc) throw new Error('upload');
-    const r2 = await fetch(loc, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body }); if (!r2.ok) throw new Error('upload ' + r2.status); return (await r2.json()).id; }
+    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 300000); let r2; try { r2 = await fetch(loc, { method: 'PUT', signal: ac.signal, headers: { 'Content-Type': 'application/json' }, body }); } catch (e) { throw new Error('offline'); } finally { clearTimeout(tm); } if (!r2.ok) throw new Error('upload ' + r2.status); return (await r2.json()).id; }
   const bd = 'wfsync' + Math.random().toString(36).slice(2);
   const mp = '--' + bd + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + bd + '\r\nContent-Type: application/json\r\n\r\n' + body + '\r\n--' + bd + '--';
   const r = await gfetch(base + '?uploadType=multipart&fields=id', { method: meth, headers: { 'Content-Type': 'multipart/related; boundary=' + bd }, body: mp });
@@ -1427,7 +1444,7 @@ async function syncRun() { // pull newer, push changed, apply deletions; newest 
   const m = sm(), a = readProjs(), byId = new Map(a.map(x => [x.id, x])); let changed = false;
   for (const id of m.del.slice()) { const f = m.files[id]; if (f && f.fid) await gfetch(GAPI + '/drive/v3/files/' + f.fid, { method: 'DELETE' }); delete m.files[id]; m.del = m.del.filter(q => q !== id); smSet(m); }
   const remote = await driveList(), seen = new Set();
-  for (const f of remote) { const id = (f.appProperties && f.appProperties.pid) || f.name.slice(4, -5), ru = +(f.appProperties && f.appProperties.updated) || 0; seen.add(id);
+  for (const f of remote) { await idle(); const id = (f.appProperties && f.appProperties.pid) || f.name.slice(4, -5), ru = +(f.appProperties && f.appProperties.updated) || 0; seen.add(id);
     const x = byId.get(id), rec = m.files[id], base = rec ? rec.u : 0;
     if (!x) { if (rec && rec.u >= ru) { await gfetch(GAPI + '/drive/v3/files/' + f.id, { method: 'DELETE' }); delete m.files[id]; continue; } // deleted here earlier
       const p = await driveGet(f.id); if (p && p.state) { p.id = id; p.updated = p.updated || ru; a.push(p); byId.set(id, p); m.files[id] = { fid: f.id, u: p.updated }; changed = true; } continue; }
@@ -1438,12 +1455,13 @@ async function syncRun() { // pull newer, push changed, apply deletions; newest 
     // both devices changed it since the last sync: keep both, newest keeps the name
     const p = await driveGet(f.id); if (!p || !p.state) continue; p.updated = p.updated || ru;
     const older = p.updated > x.updated ? { ...x } : p, newer = p.updated > x.updated ? p : x;
+    if (JSON.stringify(older.state) === JSON.stringify(newer.state)) { Object.assign(x, { name: newer.name, updated: newer.updated }); m.files[id] = { fid: newer === p ? f.id : await drivePut(x, f.id), u: x.updated }; changed = true; continue; } // same design on both: no copy
     Object.assign(x, { name: newer.name, state: newer.state, updated: newer.updated });
     const cp = { id: pid(), name: (older.name + ' (other device copy ' + shortDay(older.updated) + ')').slice(0, 90), updated: older.updated, state: older.state };
     a.splice(a.indexOf(x) + 1, 0, cp); byId.set(cp.id, cp); changed = true;
     m.files[id] = { fid: newer === p ? f.id : await drivePut(x, f.id), u: x.updated };
     m.files[cp.id] = { fid: await drivePut(cp, null), u: cp.updated }; seen.add(cp.id); }
-  for (const x of a.slice()) { if (seen.has(x.id)) continue;
+  for (const x of a.slice()) { if (seen.has(x.id)) continue; await idle();
     const rec = m.files[x.id];
     if (rec && rec.fid && !seen.has(x.id) && x.updated <= rec.u) { a.splice(a.indexOf(x), 1); delete m.files[x.id]; changed = true; if (projId === x.id) projId = null; continue; } // deleted on the other device
     if (!rec || x.updated > rec.u || !seen.has(x.id)) m.files[x.id] = { fid: await drivePut(x, null), u: x.updated }; }
@@ -1454,11 +1472,12 @@ function syncNow(interactive) { const m = sm(); if (!m.connected && !interactive
   if (!navigator.onLine) { sy.state = 'offline'; syncUI(); return Promise.resolve(); }
   if (sy.busy) { sy.again = true; return sy.busy; }
   sy.state = 'busy'; syncUI();
-  sy.busy = (interactive ? getToken(true) : Promise.resolve()).then(() => syncRun()).then(() => { sy.state = 'ok'; },
+  if (!interactive && !tokLoad()) { sy.state = 'auth'; syncUI(); return Promise.resolve(); } // never pop up on its own
+  sy.busy = (interactive ? getToken(true) : Promise.resolve()).then(() => withTimeout(syncRun(), 600000, 'timeout')).then(() => { sy.state = 'ok'; rememberEmail(); },
     e => { const msg = String(e && e.message); sy.state = msg === 'setup' ? 'setup' : (msg === 'auth' ? 'auth' : (!navigator.onLine || msg === 'offline' || e instanceof TypeError ? 'offline' : 'err')); sy.err = msg; console.warn('sync', e); })
-    .finally(() => { sy.busy = null; syncUI(); if (sy.again) { sy.again = false; syncSoon(); } });
+    .catch(e => console.warn('sync', e)).finally(() => { sy.busy = null; try { syncUI(); } catch (e) { /* */ } if (sy.again) { sy.again = false; syncSoon(); } });
   return sy.busy; }
-function syncSoon(fast) { if (!sm().connected) return; clearTimeout(sy.t); sy.t = setTimeout(() => syncNow(false), fast ? 300 : 6000); if (sy.state !== 'busy') { sy.state = navigator.onLine ? sy.state : 'offline'; syncUI(); } }
+function syncSoon(fast) { if (!sm().connected) return; if (!tokLoad()) { sy.state = 'auth'; syncUI(); return; } clearTimeout(sy.t); sy.t = setTimeout(() => syncNow(false), fast ? 300 : 6000); if (sy.state !== 'busy') { sy.state = navigator.onLine ? sy.state : 'offline'; syncUI(); } }
 const agoShort = t => { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : ago(t); };
 function syncUI() { const box = $('syncBox'); if (!box) return; const m = sm();
   $('syncConnect').hidden = !!m.connected; $('syncNow').hidden = !m.connected;
@@ -1468,13 +1487,20 @@ function syncUI() { const box = $('syncBox'); if (!box) return; const m = sm();
     : sy.state === 'err' ? 'Sync problem – tap Sync now to try again' : sy.state === 'setup' ? 'Drive sync is not set up yet in this version.' : m.last ? '☁ Synced ' + agoShort(m.last) : '☁ Connected'; }
 window.wfSyncSoon = syncSoon;
 window.wfSyncDel = id => { const m = sm(); if (!m.connected) return; if (m.files[id]) { m.del.push(id); smSet(m); } syncSoon(1); };
-window.wfSyncOpen = () => { syncUI(); syncNow(false); };
+window.wfSyncOpen = () => { syncUI(); syncSoon(1); };
 $('syncConnect').onclick = () => syncNow(true).then(() => { if (sy.state === 'ok') toast('Google Drive connected'); });
-$('syncNow').onclick = () => syncNow(sy.state === 'auth' || !sy.tok);
+$('syncNow').onclick = () => syncNow(!tokLoad());
 window.addEventListener('online', () => syncSoon(1)); window.addEventListener('offline', () => { sy.state = 'offline'; syncUI(); });
 setInterval(() => { if (!$('homeProjs').hidden) syncUI(); }, 30000);
-function syncBoot() { syncUI(); if (sm().connected) syncNow(false); }
-window.WF_SYNC = { now: syncNow, meta: sm, get state() { return sy.state; }, set big(v) { sy.big = v; }, forget() { sy.tok = null; sy.exp = 0; } };
+function syncBoot() { try { syncUI(); if (sm().connected) { if (tokLoad()) setTimeout(() => syncNow(false), 4000); else { sy.state = 'auth'; syncUI(); } } } catch (e) { console.warn('sync boot', e); } }
+function dedupeProjs() { const a = readProjs(), seen = new Map(), out = [], gone = [];
+  for (const x of a.slice().sort((p, q) => q.updated - p.updated)) { const k = JSON.stringify(x.state); if (seen.has(k)) { gone.push(x); continue; } seen.set(k, x); out.push(x); }
+  return { out, gone }; }
+$('projDedupe') && ($('projDedupe').onclick = async () => { const { out, gone } = dedupeProjs();
+  if (!gone.length) { toast('No exact duplicates found'); return; }
+  const k = await askDlg('Found ' + gone.length + ' exact duplicate' + (gone.length > 1 ? 's' : '') + ' (same design, saved more than once). Remove them and keep the newest of each?', [['go', 'Remove ' + gone.length, 'accent'], [null, 'Cancel']]); if (k !== 'go') return;
+  if (writeProjs(out)) { gone.forEach(x => { if (projId === x.id) projId = null; window.wfSyncDel && wfSyncDel(x.id); }); listProjs(); toast('Removed ' + gone.length + ' duplicate' + (gone.length > 1 ? 's' : '')); } });
+window.WF_SYNC = { now: syncNow, meta: sm, get state() { return sy.state; }, set big(v) { sy.big = v; }, forget() { tokForget(); }, dedupe: dedupeProjs };
 
 // ---------- boot ----------
 window.WF = { loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
