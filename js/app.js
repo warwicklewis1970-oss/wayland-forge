@@ -735,19 +735,22 @@ $('swatches').addEventListener('click', e => {
 $('imgFile').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   const r = new FileReader();
-  r.onload = () => {
-    const el = new Image(); let src = r.result;
-    el.onload = () => { if (!el.dataset.shrunk) { const out = shrinkImg(el, file); if (out) { el.dataset.shrunk = 1; src = out; el.src = out; return; } } imgEls.set(src, el); if (!IM()) { addImageLayer.noPick = 1; const im = Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (S.images.length + 1), behind: false, src: null }); S.images.push(im); sel.slot = im.id; } const old = IM(), bgp = !!old.behind, ni = Object.assign(imgDefaults(), { id: old.id, name: old.name, behind: bgp, src, x: C, y: C, size: bgp ? 900 : 200, clip: !bgp, clipMode: bgp ? 'free' : 'clip' }); setIM(ni); if (!bgp) Object.assign(ni, fitInside(ni)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
-    el.onerror = () => alert('Could not read that image.'); el.src = src;
-  };
+  r.onload = () => placeImage(r.result, file);
   r.readAsDataURL(file); e.target.value = '';
 });
-function shrinkImg(el, file) { // keep imported pictures to a sensible size: 2400 px long side (300 dpi at ~200 mm)
+function placeImage(src0, file, force, onErr) { // shared by file upload and Load from link
+  {
+    const el = new Image(); let src = src0;
+    el.onload = () => { if (!el.dataset.shrunk) { const out = shrinkImg(el, file, force); if (out) { el.dataset.shrunk = 1; src = out; el.src = out; return; } } imgEls.set(src, el); if (!IM()) { addImageLayer.noPick = 1; const im = Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (S.images.length + 1), behind: false, src: null }); S.images.push(im); sel.slot = im.id; } const old = IM(), bgp = !!old.behind, ni = Object.assign(imgDefaults(), { id: old.id, name: old.name, behind: bgp, src, x: C, y: C, size: bgp ? 900 : 200, clip: !bgp, clipMode: bgp ? 'free' : 'clip' }); setIM(ni); if (!bgp) Object.assign(ni, fitInside(ni)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
+    el.onerror = () => (onErr || (() => alert('Could not read that image.')))(); el.src = src;
+  }
+}
+function shrinkImg(el, file, force) { // keep imported pictures to a sensible size: 2400 px long side (300 dpi at ~200 mm)
   const M = 2400, w = el.naturalWidth, h = el.naturalHeight, k = Math.min(1, M / Math.max(w, h)), W = Math.max(1, Math.round(w * k)), H = Math.max(1, Math.round(h * k));
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const cx = cv.getContext('2d'); cx.drawImage(el, 0, 0, W, H);
   let alpha = false; try { const d = cx.getImageData(0, 0, W, H).data; for (let i = 3; i < d.length; i += 4 * 7) if (d[i] < 250) { alpha = true; break; } } catch (e) { return null; }
   const out = alpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92);
-  el.dataset.shrunk = 1; return out.length < el.src.length || k < 1 ? out : null;
+  el.dataset.shrunk = 1; return force || out.length < el.src.length || k < 1 ? out : null;
 }
 
 $('undoBtn').onclick = () => { if (hist.i > 0) restore(hist.stack[--hist.i]); };
@@ -1329,8 +1332,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v40';
-const WHATS_NEW = "v40 (sync): Projects can sync between phone and laptop through your Google Drive. In Projects tap Connect Google Drive once on each device; after that Save to Projects uploads in the background and the other device picks it up when you open the app or Projects (or tap Sync now). Nothing changed in the laser files, print files, sizes or settings.";
+const APP_VERSION = 'v41';
+const WHATS_NEW = "v41 (links): Open pictures straight from a link (e.g. from Line Art Forge). Tap Load from link… in the Image section and paste the link, or open a link to Wayland Forge that carries the picture – it arrives as a new image layer. Transparent PNGs and SVGs both work. Nothing changed in the laser files, print files, sizes or settings.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1350,6 +1353,34 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEve
     reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) $('updBar').hidden = false; }); });
   }).catch(err => console.warn('SW failed', err));
 });
+
+
+// ---- Load a picture from a link (button, or ?img=<https url> e.g. from Line Art Forge) ----
+function svgSized(txt) { // give the SVG a real pixel size (2400 px long side) so it rasterises sharply
+  const d = new DOMParser().parseFromString(txt, 'image/svg+xml'), sv = d.documentElement; if (!sv || sv.nodeName.toLowerCase() !== 'svg') return null;
+  let vb = (sv.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number), w = parseFloat(sv.getAttribute('width')), h = parseFloat(sv.getAttribute('height'));
+  if (vb.length !== 4 || vb.some(isNaN)) { vb = null; } const bw = vb ? vb[2] : w, bh = vb ? vb[3] : h; if (!(bw > 0 && bh > 0)) return null;
+  if (!vb) sv.setAttribute('viewBox', '0 0 ' + bw + ' ' + bh); const k = 2400 / Math.max(bw, bh);
+  sv.setAttribute('width', Math.round(bw * k)); sv.setAttribute('height', Math.round(bh * k));
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(sv)))); }
+async function loadImageLink(url) {
+  let u; try { u = new URL(String(url || '').trim()); } catch (e) { u = null; }
+  if (!u || u.protocol !== 'https:') { alert('That link can\'t be used. It needs to be a full web address starting with https://'); return false; }
+  const fail = why => { alert('Could not load the picture from that link.\n\n' + why + '\n\nTip: download the picture and use Upload / replace picture instead.'); return false; };
+  let res; try { res = await fetch(u.href, { mode: 'cors', cache: 'no-store' }); } catch (e) { return fail('The website did not allow it to be opened here, or you are offline.'); }
+  if (!res.ok) return fail(res.status === 404 ? 'The picture was not found (404) – the link may have expired.' : 'The website answered with an error (' + res.status + ').');
+  const blob = await res.blob(), ct = (res.headers.get('content-type') || blob.type || '').toLowerCase(), head = await blob.slice(0, 512).text();
+  const isSvg = ct.includes('svg') || /<svg[\s>]/i.test(head), isImg = isSvg || ct.startsWith('image/') || /^\x89PNG/.test(head);
+  if (!isImg) return fail('That link is not a picture (PNG or SVG).');
+  let src; if (isSvg) { src = svgSized(await blob.text()); if (!src) return fail('That SVG file could not be read.'); }
+  else src = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => ok(null); r.readAsDataURL(blob); }); if (!src) return fail('The picture could not be read.');
+  if (homeOpen) { archiveSession(); openState(defaults(), null); }
+  const im = Object.assign(imgDefaults(), { id: uid(), name: (decodeURIComponent(u.pathname.split('/').pop() || '').replace(/\.\w+$/, '').slice(0, 30)) || 'Image ' + (S.images.length + 1), behind: false, src: null });
+  S.images.push(im); sel.slot = im.id; sel.img = false; sel.orn = null; sel.letters = []; openSec('sec-img');
+  return new Promise(ok => placeImage(src, null, isSvg, () => { S.images = S.images.filter(x => x !== im); fixSel(); update(); ok(fail('The file is not a picture this app can open.')); }) || setTimeout(() => ok(true), 0)); }
+$('imgLink').onclick = () => { const v = prompt('Paste the picture link (PNG or SVG, starting with https://):'); if (v) loadImageLink(v); };
+function imgParamBoot() { const q = new URLSearchParams(location.search), v = q.get('img'); if (!v) return;
+  q.delete('img'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); loadImageLink(v); }
 
 // ---------- Google Drive sync (appDataFolder: hidden folder only this app can see) ----------
 // One Drive file per project: wfp-<id>.json holding the whole project (pictures included).
@@ -1445,13 +1476,13 @@ function syncBoot() { syncUI(); if (sm().connected) syncNow(false); }
 window.WF_SYNC = { now: syncNow, meta: sm, get state() { return sy.state; }, set big(v) { sy.big = v; }, forget() { sy.tok = null; sy.exp = 0; } };
 
 // ---------- boot ----------
-window.WF = { showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
+window.WF = { loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
 (async () => {
   await kvLoad(); migrateProjs();
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
   // start on the home screen; projects open only from Projects
   $('loading').remove(); update(); commit();
   document.body.dataset.ready = '1';
-  syncBoot();
+  syncBoot(); imgParamBoot();
 })().catch(err => { $('loading').textContent = 'Failed to load fonts: ' + err.message; console.error(err); });
 })();
