@@ -646,6 +646,7 @@ act('resetLetter', () => { for (const s of sel.letters) { const L = S.layers.fin
 act('resetLetters', () => { const L = curLayer(); if (L) L.letters = {}; });
 const addOrn = type => { const o = { id: uid(), type, style: 'fill', x: C, y: C, r: ORN_R[type] || 20, rot: 0, color: (type === 'holly1' || type === 'holly2') ? '#1f6b34' : SB().stroke, ...(type === 'holly1' || type === 'holly2' ? { color2: '#c0262d' } : {}) }; S.ornaments.push(o); sel.orn = o.id; };
 act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot')); act('addHolly1', () => addOrn('holly1')); act('addHolly2', () => addOrn('holly2')); act('addNote', () => addOrn('note')); act('addNotes', () => addOrn('notes'));
+act('ornStyleAll', () => { const o = curOrn(); if (!o) return; const v = o.style === 'line' ? 'line' : 'fill'; S.ornaments.forEach(x => { x.style = v; }); toast('All ornaments set to ' + (v === 'line' ? 'Line (outline)' : 'Fill (solid)')); });
 act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), follow: o.follow ? { ...o.follow } : undefined }; if (Math.abs(o.x - C) < 1) o.x = C - 120; c.pair = o.id; o.pair = c.id; mirrorInto(o, c); S.ornaments.push(c); sel.orn = c.id; });
 act('delOrn', () => { const p = partnerOf(curOrn()); if (p) delete p.pair; S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
 act('clearOrn', () => { S.ornaments = []; });
@@ -1332,8 +1333,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v41';
-const WHATS_NEW = "v41 (links): Open pictures straight from a link (e.g. from Line Art Forge). Tap Load from link… in the Image section and paste the link, or open a link to Wayland Forge that carries the picture – it arrives as a new image layer. Transparent PNGs and SVGs both work. Nothing changed in the laser files, print files, sizes or settings.";
+const APP_VERSION = 'v42';
+const WHATS_NEW = "v42: Apply to all ornaments button for Fill/Line. Laser files work the same as before.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
