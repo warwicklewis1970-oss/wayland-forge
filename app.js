@@ -12,6 +12,8 @@ const FONTS = [
 const SCRIPT = new Set(FONTS.filter(f => f[3]).map(f => f[0]));
 const C = 500, ART = 1000, STORE = 'wayland-forge-project-v1';
 const fonts = {};
+// Google Drive sync: OAuth client ID (Google Cloud console > Credentials > OAuth client, type Web application).
+const GOOGLE_CLIENT_ID = '691597600502-ldoveuit86b5c0j5gfhhnrq1ok5a35cg.apps.googleusercontent.com';
 const $ = id => document.getElementById(id);
 const f2 = n => Math.round(n * 100) / 100;
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -446,10 +448,10 @@ function textEl(L, editor) {
   {
     const g = layoutLayer(L).map(q => {
       if (!editor) return `<path d="${q.d}" transform="${q.tr}"/>`;
-      const hi = isSel(L.id, q.i), at = ` data-k="ch" data-l="${L.id}" data-i="${q.i}"`, bb = q.bb, pd = 6;
-      // transparent bbox hit-rect: thin strokes, counters and gaps between strokes all grab the letter
-      const hit = bb ? `<rect data-hit="1"${at} x="${f2(bb.x1 - pd)}" y="${f2(bb.y1 - pd)}" width="${f2(bb.x2 - bb.x1 + 2 * pd)}" height="${f2(bb.y2 - bb.y1 + 2 * pd)}" pointer-events="all" ${hi ? 'fill="#e0a043" fill-opacity="0.18" stroke="#e0a043" stroke-width="1.5" stroke-dasharray="4 3"' : 'fill="none"'}/>` : '';
-      return `<g transform="${q.tr}"><path d="${q.d}"${at}${hi ? ' stroke="#e0a043" stroke-width="3"' : ''}/>${hit}</g>`;
+      const hi = isSel(L.id, q.i), at = ` data-k="ch" data-l="${L.id}" data-i="${q.i}"`, bb = q.bb, pd = 1;
+      // tight bbox for marquee only (pointer-events none); actual taps hit the glyph path + a thin invisible stroke so nearby letters are not stolen
+      const hit = bb ? `<rect data-hit="1" data-l="${L.id}" data-i="${q.i}" x="${f2(bb.x1 - pd)}" y="${f2(bb.y1 - pd)}" width="${f2(bb.x2 - bb.x1 + 2 * pd)}" height="${f2(bb.y2 - bb.y1 + 2 * pd)}" pointer-events="none" ${hi ? 'fill="#e0a043" fill-opacity="0.18" stroke="#e0a043" stroke-width="1.5" stroke-dasharray="4 3"' : 'fill="none"'}/>` : '';
+      return `<g transform="${q.tr}"><path d="${q.d}"${at} pointer-events="all"${hi ? ' stroke="#e0a043" stroke-width="3"' : ''}/><path d="${q.d}"${at} fill="none" stroke="transparent" stroke-width="10" pointer-events="stroke"/>${hit}</g>`;
     }).join('');
     return L.style === 'hollow' ? `<g fill="none" stroke="${L.color}" stroke-width="2.5" stroke-linejoin="round">${g}</g>` : `<g fill="${L.color}">${g}</g>`;
   }
@@ -558,7 +560,52 @@ function syncUI() {
 function target(scope) {
   return scope === 'shape' ? curShape() : scope === 'base' ? SB() : scope === 'layer' ? curLayer() : scope === 'orn' ? curOrn() : scope === 'img' ? IM() : scope === 'doc' ? S : null;
 }
-function update() { render(); syncUI(); }
+const ORN_LABEL = { star: 'Star', dot: 'Dot', holly1: 'Holly', holly2: 'Holly', note: 'Note', notes: 'Notes' };
+function railLabel(kind, obj) {
+  if (kind === 'text') { const t = (obj.text || '').trim(); return 'T ' + (t ? t.slice(0, 16) : '(empty)'); }
+  if (kind === 'orn') return ORN_LABEL[obj.type] || 'Ornament';
+  if (kind === 'img') return (obj.name || 'Image').slice(0, 16);
+  if (kind === 'shape') return (obj.name || obj.base.shape).slice(0, 16);
+  return 'Layer';
+}
+function railOn(it) {
+  if (it.kind === 'orn') return sel.orn === it.id;
+  if (it.kind === 'img') return !!sel.img && sel.slot === it.id;
+  if (it.kind === 'text') return !sel.orn && !sel.img && sel.layer === it.id;
+  if (it.kind === 'shape') return sel.shape === it.id && !sel.orn && !sel.img && !sel.letters.length;
+  return false;
+}
+function selectRail(kind, id) {
+  sel.letters = [];
+  if (kind === 'text') {
+    const L = S.layers.find(l => l.id === id); if (!L) return;
+    sel.layer = id; sel.orn = null; sel.img = false; sel.shape = shapeOf(L).id;
+    openSec('sec-text');
+  } else if (kind === 'orn') {
+    sel.orn = id; sel.img = false; openSec('sec-orn');
+  } else if (kind === 'img') {
+    sel.slot = id; sel.img = true; sel.orn = null; openSec('sec-img');
+  } else if (kind === 'shape') {
+    sel.shape = id; sel.orn = null; sel.img = false; fixSel(); openSec('sec-shape');
+  }
+  try { if (isSheet() && panel.dataset.snap === 'collapsed') setSnap('small'); } catch (e) { /* */ }
+  update();
+}
+function renderLayerRail() {
+  const track = $('layerRailTrack'), count = $('layerRailCount'), rail = $('layerRail');
+  if (!track || !count) return;
+  const items = [];
+  if (S.shapes.length > 1) S.shapes.slice().reverse().forEach(sh => items.push({ kind: 'shape', id: sh.id, label: '⬡ ' + railLabel('shape', sh) }));
+  S.layers.forEach(l => items.push({ kind: 'text', id: l.id, label: railLabel('text', l) }));
+  S.ornaments.forEach(o => items.push({ kind: 'orn', id: o.id, label: '✦ ' + railLabel('orn', o) }));
+  S.images.slice().reverse().forEach(im => items.push({ kind: 'img', id: im.id, label: '🖼 ' + railLabel('img', im) }));
+  count.textContent = items.length + ' layer' + (items.length === 1 ? '' : 's');
+  if (rail) rail.hidden = items.length === 0;
+  const html = items.map(it => `<button type="button" class="lrchip${railOn(it) ? ' on' : ''}" data-rk="${it.kind}" data-rid="${it.id}" title="${esc(it.label)}">${esc(it.label)}</button>`).join('');
+  if (track.dataset.html === html) return; // skip DOM thrash on phone
+  track.dataset.html = html; track.innerHTML = html;
+}
+function update() { render(); syncUI(); renderLayerRail(); }
 function commit() {
   const snap = JSON.stringify(S);
   if (hist.stack[hist.i] === snap) return;
@@ -610,10 +657,14 @@ function kvSet(k, v) { mem[k] = v; kvPut(k, v).catch(e => { console.warn(e); if 
 function kvDel(k) { delete mem[k]; kvPut(k, null).catch(() => {}); }
 const mb = n => (n / 1048576 < 0.1 ? '<0.1' : (n / 1048576).toFixed(1)) + ' MB';
 let homeOpen = true, projId = null;
+const pid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); // stable, unique across devices
 const readProjs = () => { try { const a = JSON.parse(kvGet(PROJS) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
-const writeProjs = a => { try { return kvSet(PROJS, JSON.stringify(a)); } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
+function migrateProjs() { const a = readProjs(), seen = new Set(); let ch = false; // give every project a unique id + updated time, keeping all of them
+  for (const x of a) { if (!x.id || x.id === 'last' || seen.has(x.id)) { x.id = pid(); ch = true; } seen.add(x.id); if (!(x.updated > 0)) { x.updated = Date.now(); ch = true; } if (!x.name) { x.name = 'Untitled'; ch = true; } }
+  if (ch) writeProjs(a, true); }
+const writeProjs = (a, quiet) => { try { const ok = kvSet(PROJS, JSON.stringify(a)); if (ok && !quiet && window.wfSyncSoon) wfSyncSoon(); return ok; } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
 function saveNow() { nameBtnUI(); if (homeOpen) return; try { kvSet(STORE, JSON.stringify(S)); kvSet(META, JSON.stringify({ projId, t: Date.now() })); } catch (e) { /* storage full (large image) */ }
-  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.state = S; x.updated = Date.now(); writeProjs(a); } } }
+  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x && JSON.stringify(x.state) !== JSON.stringify(S)) { x.state = JSON.parse(JSON.stringify(S)); x.updated = Date.now(); writeProjs(a); } } } // only a real change counts as newer (matters for sync); deep-clone so editor edits don't mutate the Projects list
 let saveT; function persist() { if (homeOpen) return; clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
 
 // ---------- control bindings ----------
@@ -640,6 +691,7 @@ act('resetLetter', () => { for (const s of sel.letters) { const L = S.layers.fin
 act('resetLetters', () => { const L = curLayer(); if (L) L.letters = {}; });
 const addOrn = type => { const o = { id: uid(), type, style: 'fill', x: C, y: C, r: ORN_R[type] || 20, rot: 0, color: (type === 'holly1' || type === 'holly2') ? '#1f6b34' : SB().stroke, ...(type === 'holly1' || type === 'holly2' ? { color2: '#c0262d' } : {}) }; S.ornaments.push(o); sel.orn = o.id; };
 act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot')); act('addHolly1', () => addOrn('holly1')); act('addHolly2', () => addOrn('holly2')); act('addNote', () => addOrn('note')); act('addNotes', () => addOrn('notes'));
+act('ornStyleAll', () => { const o = curOrn(); if (!o) return; const v = o.style === 'line' ? 'line' : 'fill'; S.ornaments.forEach(x => { x.style = v; }); toast('All ornaments set to ' + (v === 'line' ? 'Line (outline)' : 'Fill (solid)')); });
 act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), follow: o.follow ? { ...o.follow } : undefined }; if (Math.abs(o.x - C) < 1) o.x = C - 120; c.pair = o.id; o.pair = c.id; mirrorInto(o, c); S.ornaments.push(c); sel.orn = c.id; });
 act('delOrn', () => { const p = partnerOf(curOrn()); if (p) delete p.pair; S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
 act('clearOrn', () => { S.ornaments = []; });
@@ -666,26 +718,49 @@ act('newProj', () => { if (confirm('Start a new design? (Your current one stays 
 function archiveSession() { // keep an unnamed last session so starting fresh never loses work
   try { const m = JSON.parse(kvGet(META) || '{}'), raw = kvGet(STORE); if (!raw || m.projId) return;
     const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !(st.images || []).length && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
-    const a = readProjs(); a.unshift({ id: uid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
-function openState(st, id, keepLast) { if (!keepLast) archiveSession(); S = sanitize(st); projId = id; sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false }; fixSel(); hist.stack = []; hist.i = -1; closeHome(); update(); commit(); fitView(); saveNow(); }
+    const a = readProjs(); if (a.some(q => JSON.stringify(q.state) === JSON.stringify(st))) { kvSet(META, JSON.stringify({ projId: null, archived: true })); return; } a.unshift({ id: pid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
+function openState(st, id, keepLast) {
+  clearTimeout(saveT); saveT = null; drag = null; mode.multi = false;
+  if (!keepLast) archiveSession();
+  // deep-clone so Projects list / Drive sync never share live objects with the editor
+  S = sanitize(JSON.parse(JSON.stringify(st)));
+  projId = id;
+  sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false, slot: null };
+  fixSel(); hist.stack = []; hist.i = -1;
+  geoCache.key = ''; pathCache.clear(); procCache.clear();
+  closeHome();
+  try { if (isSheet() && panel.dataset.snap === 'collapsed') setSnap('small'); } catch (e) { /* */ }
+  update(); commit(); fitView(); saveNow();
+  requestAnimationFrame(() => { try { fitView(); update(); } catch (e) { /* */ } });
+}
 const slug = t => (String(t || '').normalize('NFKD').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('') || '').slice(0, 20);
 function designName() { return projName() || S.name || ''; }
 function nameBtnUI() { const b = $('nameBtn'); if (b) { const n = designName(); b.textContent = (n || 'Untitled') + ' ✎'; b.title = 'Design name (used for file names). Tap to rename.'; } }
 function setDesignName(n) { n = String(n || '').trim().slice(0, 60); if (!n) return false;
   if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.name = n; x.updated = Date.now(); writeProjs(a); } }
-  else { const a = readProjs(), id = uid(); a.unshift({ id, name: n, updated: Date.now(), state: S }); if (writeProjs(a)) projId = id; }
+  else { const a = readProjs(), id = pid(); a.unshift({ id, name: n, updated: Date.now(), state: S }); if (writeProjs(a)) projId = id; }
   S.name = n; saveNow(); return true; }
 function fileBase() { let n = designName();
   if (!n) { const top = slug(S.layers[0] && S.layers[0].text) || 'MyBadge'; const a = prompt('Name this design (used for file names):', top); if (a == null) throw new Error('Export cancelled - no design name.'); setDesignName(slug(a) || top); n = designName(); }
   return slug(n) || 'MyBadge'; }
 function projName() { const x = projId && readProjs().find(q => q.id === projId); return x ? x.name : null; }
 $('nameBtn') && $('nameBtn').addEventListener('click', () => { const n = prompt('Design name (used for file names):', designName() || slug(S.layers[0] && S.layers[0].text) || 'MyBadge'); if (n != null && setDesignName(n)) toast('Name: ' + designName()); });
-act('saveToProjects', () => { const n = projName(); if (n) { saveNow(); toast('Saved to Projects: ' + n); return; }
-  const name = prompt('Name this project:', (S.layers[0] && S.layers[0].text) || 'My badge'); if (!name) return; const a = readProjs(), id = uid(); a.unshift({ id, name: name.trim().slice(0, 60), updated: Date.now(), state: S }); if (writeProjs(a)) { projId = id; saveNow(); toast('Saved to Projects: ' + name); } });
+function askDlg(msg, btns) { return new Promise(res => { const d = document.createElement('div'); d.className = 'wfask'; d.setAttribute('role', 'dialog');
+  d.innerHTML = '<div class="wfaskbox"><p></p><div class="wfaskbtn"></div></div>'; d.querySelector('p').textContent = msg;
+  btns.forEach(([k, t, cls]) => { const b = document.createElement('button'); b.textContent = t; if (cls) b.className = cls; b.onclick = () => { d.remove(); res(k); }; d.querySelector('.wfaskbtn').appendChild(b); });
+  d.addEventListener('click', e => { if (e.target === d) { d.remove(); res(null); } }); document.body.appendChild(d); }); }
+function saveAsNew() { const name = prompt('Name this project:', (projName() ? projName() + ' 2' : (S.layers[0] && S.layers[0].text) || 'My badge')); if (!name || !name.trim()) return;
+  const a = readProjs(), id = pid(), st = JSON.parse(JSON.stringify(S)); a.unshift({ id, name: name.trim().slice(0, 60), updated: Date.now(), state: st }); if (writeProjs(a)) { projId = id; saveNow(); toast('Saved to Projects: ' + name.trim()); window.wfSyncSoon && wfSyncSoon(1); } }
+act('saveToProjects', async () => { const n = projName();
+  if (!n) { const cur = JSON.stringify(S), same = readProjs().find(q => JSON.stringify(q.state) === cur); // identical project already saved: just link to it
+    if (same) { projId = same.id; saveNow(); toast('Already in Projects: ' + same.name); return; } return saveAsNew(); }
+  const k = await askDlg('Save this design', [['up', 'Update "' + n + '"', 'accent'], ['new', 'Save as new'], [null, 'Cancel']]);
+  if (k === 'up') { saveNow(); const a = readProjs(), x = a.find(q => q.id === projId); if (x) { x.updated = Date.now(); writeProjs(a); } toast('Updated: ' + n); window.wfSyncSoon && wfSyncSoon(1); }
+  else if (k === 'new') saveAsNew(); });
 // ---- home / start screen ----
 function showHome(view) { saveNow(); homeOpen = true; document.body.classList.add('home'); $('home').hidden = false; homeView(view || 'main'); }
 function closeHome() { homeOpen = false; nameBtnUI(); document.body.classList.remove('home'); $('home').hidden = true; }
-function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; window.wfNewsShow && wfNewsShow(); if (v === 'projs') listProjs(); }
+function homeView(v) { $('homeMain').hidden = v !== 'main'; $('homeProjs').hidden = v !== 'projs'; window.wfNewsShow && wfNewsShow(); if (v === 'projs') { listProjs(); window.wfSyncOpen && wfSyncOpen(); } }
 const ago = t => { if (!t) return ''; const d = new Date(t); return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
 function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(kvGet(META) || '{}'); } catch (e) { /* */ }
   const last = !m.projId && !m.archived && kvGet(STORE);
@@ -695,11 +770,15 @@ function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(k
   $('projList').innerHTML = html || '<li class="hint">No saved projects yet. Start a New design and tap <b>Save to Projects</b>.</li>'; }
 $('projList').addEventListener('click', e => { const b = e.target.closest('[data-pa]'); if (!b) return; const id = b.closest('li').dataset.pid, a = readProjs(), x = a.find(q => q.id === id);
   if (b.dataset.pa === 'open') { if (id === 'last') { try { openState(JSON.parse(kvGet(STORE)), null, true); } catch (er) { alert('Could not open the last session.'); } } else if (x) openState(x.state, x.id); }
-  else if (b.dataset.pa === 'ren' && x) { const n = prompt('Rename project:', x.name); if (n) { x.name = n.trim().slice(0, 60); writeProjs(a); listProjs(); } }
-  else if (b.dataset.pa === 'del') { if (!confirm('Delete "' + (x ? x.name : 'Last session') + '"? This cannot be undone.')) return; if (id === 'last') { kvDel(STORE); kvDel(META); } else { writeProjs(a.filter(q => q.id !== id)); if (projId === id) projId = null; } listProjs(); } });
+  else if (b.dataset.pa === 'ren' && x) { const n = prompt('Rename project:', x.name); if (n) { x.name = n.trim().slice(0, 60); x.updated = Date.now(); writeProjs(a); listProjs(); } }
+  else if (b.dataset.pa === 'del') { if (!confirm('Delete "' + (x ? x.name : 'Last session') + '"? This cannot be undone.')) return; if (id === 'last') { kvDel(STORE); kvDel(META); } else { writeProjs(a.filter(q => q.id !== id)); if (projId === id) projId = null; window.wfSyncDel && wfSyncDel(id); } listProjs(); } });
 $('homeNew').onclick = () => { archiveSession(); openState(defaults(), null); window.dispatchEvent(new Event('wf-newdesign')); };
 $('homeProjects').onclick = () => homeView('projs');
 $('homeBack').onclick = () => homeView('main');
+($('layerRailTrack') || { addEventListener() {} }).addEventListener('click', e => {
+  const b = e.target.closest('[data-rk]'); if (!b) return;
+  e.preventDefault(); selectRail(b.dataset.rk, b.dataset.rid);
+});
 $('homeTour').onclick = () => { if (homeOpen && !$('homeTour').dataset.keep) { archiveSession(); openState(defaults(), null); } window.dispatchEvent(new Event('wf-tutorial')); };
 $('homeLoad').addEventListener('change', e => { $('loadProj').files = e.target.files; $('loadProj').dispatchEvent(new Event('change')); });
 $('homeBtn').onclick = () => showHome('main');
@@ -729,19 +808,22 @@ $('swatches').addEventListener('click', e => {
 $('imgFile').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   const r = new FileReader();
-  r.onload = () => {
-    const el = new Image(); let src = r.result;
-    el.onload = () => { if (!el.dataset.shrunk) { const out = shrinkImg(el, file); if (out) { el.dataset.shrunk = 1; src = out; el.src = out; return; } } imgEls.set(src, el); if (!IM()) { addImageLayer.noPick = 1; const im = Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (S.images.length + 1), behind: false, src: null }); S.images.push(im); sel.slot = im.id; } const old = IM(), bgp = !!old.behind, ni = Object.assign(imgDefaults(), { id: old.id, name: old.name, behind: bgp, src, x: C, y: C, size: bgp ? 900 : 200, clip: !bgp, clipMode: bgp ? 'free' : 'clip' }); setIM(ni); if (!bgp) Object.assign(ni, fitInside(ni)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
-    el.onerror = () => alert('Could not read that image.'); el.src = src;
-  };
+  r.onload = () => placeImage(r.result, file);
   r.readAsDataURL(file); e.target.value = '';
 });
-function shrinkImg(el, file) { // keep imported pictures to a sensible size: 2400 px long side (300 dpi at ~200 mm)
+function placeImage(src0, file, force, onErr) { // shared by file upload and Load from link
+  {
+    const el = new Image(); let src = src0;
+    el.onload = () => { if (!el.dataset.shrunk) { const out = shrinkImg(el, file, force); if (out) { el.dataset.shrunk = 1; src = out; el.src = out; return; } } imgEls.set(src, el); if (!IM()) { addImageLayer.noPick = 1; const im = Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (S.images.length + 1), behind: false, src: null }); S.images.push(im); sel.slot = im.id; } const old = IM(), bgp = !!old.behind, ni = Object.assign(imgDefaults(), { id: old.id, name: old.name, behind: bgp, src, x: C, y: C, size: bgp ? 900 : 200, clip: !bgp, clipMode: bgp ? 'free' : 'clip' }); setIM(ni); if (!bgp) Object.assign(ni, fitInside(ni)); sel.img = true; sel.orn = null; procCache.clear(); update(); commit(); };
+    el.onerror = () => (onErr || (() => alert('Could not read that image.')))(); el.src = src;
+  }
+}
+function shrinkImg(el, file, force) { // keep imported pictures to a sensible size: 2400 px long side (300 dpi at ~200 mm)
   const M = 2400, w = el.naturalWidth, h = el.naturalHeight, k = Math.min(1, M / Math.max(w, h)), W = Math.max(1, Math.round(w * k)), H = Math.max(1, Math.round(h * k));
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const cx = cv.getContext('2d'); cx.drawImage(el, 0, 0, W, H);
   let alpha = false; try { const d = cx.getImageData(0, 0, W, H).data; for (let i = 3; i < d.length; i += 4 * 7) if (d[i] < 250) { alpha = true; break; } } catch (e) { return null; }
   const out = alpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92);
-  el.dataset.shrunk = 1; return out.length < el.src.length || k < 1 ? out : null;
+  el.dataset.shrunk = 1; return force || out.length < el.src.length || k < 1 ? out : null;
 }
 
 $('undoBtn').onclick = () => { if (hist.i > 0) restore(hist.stack[--hist.i]); };
@@ -816,7 +898,7 @@ stage.addEventListener('pointerdown', e => {
       else { sel.letters.push({ l, i }); startLetterDrag(p); }
     } else if (isSel(l, i)) { startLetterDrag(p); drag.collapse = { l, i }; } // drag the whole group; a plain click narrows to this one
     else { sel.letters = [{ l, i }]; startLetterDrag(p); }
-    openSec('sec-letter');
+    drag.openLetter = true; // open letter panel on pointerup if this was a real letter tap (not a mis-hit drag elsewhere)
   } else if (k === 'sh') { const sh = S.shapes.find(s => s.id === t.dataset.id); sel.shape = sh.id; sel.orn = null; sel.letters = []; fixSel(); drag = { obj: sh, x0: sh.x, y0: sh.y, p }; if (S.shapes.length > 1) openSec('sec-shape'); }
   else if (k === 'orn') { sel.orn = t.dataset.id; sel.letters = []; const o = curOrn(); drag = { obj: o, x0: o.x, y0: o.y, p, orn: true }; openSec('sec-orn'); }
   else if (k === 'hole') { sel.orn = null; sel.letters = []; drag = { obj: S.hole, x0: S.hole.x, y0: S.hole.y, p }; openSec('sec-orn'); }
@@ -852,6 +934,7 @@ function endDrag(e) {
     if (sel.letters.length) openSec('sec-letter');
   }
   if (d.collapse && !d.moved) sel.letters = [d.collapse];
+  if (d.openLetter && !d.moved && sel.letters.length) openSec('sec-letter');
   update(); if (d.moved && !d.mq && !d.pan) commit();
 }
 stage.addEventListener('pointerup', endDrag);
@@ -894,8 +977,9 @@ $('exportBtn').addEventListener('click', async () => {
 $('saveProj').onclick = () => download(new Blob([JSON.stringify({ app: 'wayland-forge', version: 1, state: S }, null, 1)], { type: 'application/json' }), (designName() ? fileBase() : 'MyBadge') + ' project.json');
 $('loadProj').addEventListener('change', async e => {
   const file = e.target.files[0]; if (!file) return; e.target.value = '';
-  try { const j = JSON.parse(await file.text()); if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project'); if (homeOpen) { archiveSession(); openState(j.state, null); } else { S = sanitize(j.state); fixSel(); update(); commit(); } }
-  catch (err) { alert('Could not load project: ' + err.message); }
+  try { const j = JSON.parse(await file.text()); if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project');
+    saveNow(); openState(j.state, null); // always full reset (state, sel, undo, caches) so phone does not need a reopen
+  } catch (err) { alert('Could not load project: ' + err.message); }
 });
 
 // ---------- panel: accordion, presets, mobile sheet ----------
@@ -1323,8 +1407,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v39';
-const WHATS_NEW = "v39 (hanging hole): 1) New Hanging hole option in the Ornaments section: tick it on, type the diameter in mm (starts at 4), drag the circle on the design, or tap Snap to top to centre it near the top point with 5 mm to the edge. 2) The app warns in red if there is less than 2 mm of wood between the hole and the outside edge. 3) Laser: the hole is cut in the Cut inside step (added if your job didn't have one), with the same Power / Speed / Passes settings (100% / 1000 / 3 passes to start), and always before the outside cut so the piece doesn't move. 4) Print and POD files (SVG, PDF, PNG) show the hole as a thin grey outline. Nothing else changed: no defaults, no other laser files, sizes or positions.";
+const APP_VERSION = 'v44';
+const WHATS_NEW = "v44: Layer chips above the design – see every text, ornament and image layer and tap one to switch. Switching Projects now fully replaces the design (no need to close and reopen). Accidental letter taps are harder to trigger. Laser files are exactly the same as before.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1345,13 +1429,151 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEve
   }).catch(err => console.warn('SW failed', err));
 });
 
+
+// ---- Load a picture from a link (button, or ?img=<https url> e.g. from Line Art Forge) ----
+function svgSized(txt) { // give the SVG a real pixel size (2400 px long side) so it rasterises sharply
+  const d = new DOMParser().parseFromString(txt, 'image/svg+xml'), sv = d.documentElement; if (!sv || sv.nodeName.toLowerCase() !== 'svg') return null;
+  let vb = (sv.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number), w = parseFloat(sv.getAttribute('width')), h = parseFloat(sv.getAttribute('height'));
+  if (vb.length !== 4 || vb.some(isNaN)) { vb = null; } const bw = vb ? vb[2] : w, bh = vb ? vb[3] : h; if (!(bw > 0 && bh > 0)) return null;
+  if (!vb) sv.setAttribute('viewBox', '0 0 ' + bw + ' ' + bh); const k = 2400 / Math.max(bw, bh);
+  sv.setAttribute('width', Math.round(bw * k)); sv.setAttribute('height', Math.round(bh * k));
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(sv)))); }
+async function loadImageLink(url) {
+  let u; try { u = new URL(String(url || '').trim()); } catch (e) { u = null; }
+  if (!u || u.protocol !== 'https:') { alert('That link can\'t be used. It needs to be a full web address starting with https://'); return false; }
+  const fail = why => { alert('Could not load the picture from that link.\n\n' + why + '\n\nTip: download the picture and use Upload / replace picture instead.'); return false; };
+  let res; try { res = await fetch(u.href, { mode: 'cors', cache: 'no-store' }); } catch (e) { return fail('The website did not allow it to be opened here, or you are offline.'); }
+  if (!res.ok) return fail(res.status === 404 ? 'The picture was not found (404) – the link may have expired.' : 'The website answered with an error (' + res.status + ').');
+  const blob = await res.blob(), ct = (res.headers.get('content-type') || blob.type || '').toLowerCase(), head = await blob.slice(0, 512).text();
+  const isSvg = ct.includes('svg') || /<svg[\s>]/i.test(head), isImg = isSvg || ct.startsWith('image/') || /^\x89PNG/.test(head);
+  if (!isImg) return fail('That link is not a picture (PNG or SVG).');
+  let src; if (isSvg) { src = svgSized(await blob.text()); if (!src) return fail('That SVG file could not be read.'); }
+  else src = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => ok(null); r.readAsDataURL(blob); }); if (!src) return fail('The picture could not be read.');
+  if (homeOpen) { archiveSession(); openState(defaults(), null); }
+  const im = Object.assign(imgDefaults(), { id: uid(), name: (decodeURIComponent(u.pathname.split('/').pop() || '').replace(/\.\w+$/, '').slice(0, 30)) || 'Image ' + (S.images.length + 1), behind: false, src: null });
+  S.images.push(im); sel.slot = im.id; sel.img = false; sel.orn = null; sel.letters = []; openSec('sec-img');
+  return new Promise(ok => placeImage(src, null, isSvg, () => { S.images = S.images.filter(x => x !== im); fixSel(); update(); ok(fail('The file is not a picture this app can open.')); }) || setTimeout(() => ok(true), 0)); }
+$('imgLink').onclick = () => { const v = prompt('Paste the picture link (PNG or SVG, starting with https://):'); if (v) loadImageLink(v); };
+function imgParamBoot() { const q = new URLSearchParams(location.search), v = q.get('img'); if (!v) return;
+  q.delete('img'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); loadImageLink(v); }
+
+// ---------- Google Drive sync (appDataFolder: hidden folder only this app can see) ----------
+// One Drive file per project: wfp-<id>.json holding the whole project (pictures included).
+const SYNCK = 'wf-sync-v1', GAPI = 'https://www.googleapis.com', GSCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const sy = { tok: null, exp: 0, tc: null, busy: null, again: false, state: 'off', err: '', t: null, big: 4 * 1048576 };
+const sm = () => { try { const m = JSON.parse(localStorage.getItem(SYNCK) || '{}'); m.files = m.files || {}; m.del = m.del || []; return m; } catch (e) { return { files: {}, del: [] }; } };
+const smSet = m => localStorage.setItem(SYNCK, JSON.stringify(m));
+function loadGis() { if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+  if (sy.gis) return sy.gis; sy.gis = new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = ok; s.onerror = () => { sy.gis = null; no(new Error('offline')); }; document.head.appendChild(s); }); return sy.gis; }
+const TOKK = 'wf-sync-tok';
+function tokLoad() { if (sy.tok && Date.now() < sy.exp - 60000) return sy.tok; try { const t = JSON.parse(localStorage.getItem(TOKK) || 'null'); if (t && t.tok && Date.now() < t.exp - 60000) { sy.tok = t.tok; sy.exp = t.exp; return sy.tok; } } catch (e) { /* */ } return null; }
+const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((ok, no) => setTimeout(() => no(new Error(msg || 'timeout')), ms))]);
+function getToken(interactive) { // only a button tap may show Google's pop-up; otherwise use the saved token (valid ~1 hour) or give up quietly
+  const t = tokLoad(); if (t) return Promise.resolve(t);
+  if (!interactive) return Promise.reject(new Error('auth'));
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID === 'REPLACE_ME') return Promise.reject(new Error('setup'));
+  return withTimeout(loadGis(), 20000, 'offline').then(() => withTimeout(new Promise((ok, no) => {
+    const m = sm(), tc = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: GSCOPE, login_hint: m.email || undefined,
+      callback: r => { if (r && r.access_token) { sy.tok = r.access_token; sy.exp = Date.now() + (r.expires_in || 3600) * 1000; try { localStorage.setItem(TOKK, JSON.stringify({ tok: sy.tok, exp: sy.exp })); } catch (e) { /* */ } ok(sy.tok); } else no(new Error('auth')); },
+      error_callback: () => no(new Error('auth')) });
+    tc.requestAccessToken({ prompt: m.connected ? '' : 'consent', login_hint: m.email || undefined });
+  }), 180000, 'auth')); }
+function tokForget() { sy.tok = null; sy.exp = 0; try { localStorage.removeItem(TOKK); } catch (e) { /* */ } }
+async function rememberEmail() { try { const m = sm(); if (m.email) return; const r = await gfetch(GAPI + '/drive/v3/about?fields=user(emailAddress)'); const j = await r.json(); const e = j && j.user && j.user.emailAddress; if (e) { const m2 = sm(); m2.email = e; smSet(m2); } } catch (e) { /* not important */ } }
+const idle = () => new Promise(r => setTimeout(r, 0));
+async function gfetch(url, opt = {}) { const t = await getToken(false);
+  const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 90000);
+  let r; try { r = await fetch(url, { ...opt, signal: ac.signal, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + t } }); } catch (e) { throw new Error(ac.signal.aborted ? 'timeout' : 'offline'); } finally { clearTimeout(tm); }
+  if (r.status === 401) { tokForget(); throw new Error('auth'); }
+  if (!r.ok && r.status !== 404) throw new Error('http ' + r.status); return r; }
+async function driveList() { let out = [], pt = '';
+  do { const r = await gfetch(GAPI + '/drive/v3/files?spaces=appDataFolder&pageSize=1000&fields=' + encodeURIComponent('nextPageToken,files(id,name,appProperties)') + (pt ? '&pageToken=' + pt : ''));
+    const j = await r.json(); out = out.concat(j.files || []); pt = j.nextPageToken || ''; } while (pt);
+  return out.filter(f => /^wfp-.+\.json$/.test(f.name)); }
+async function driveGet(fid) { const r = await gfetch(GAPI + '/drive/v3/files/' + fid + '?alt=media'); if (r.status === 404) return null; return r.json(); }
+async function drivePut(x, fid) { // multipart for normal projects, resumable for big ones (large pictures)
+  const meta = { name: 'wfp-' + x.id + '.json', mimeType: 'application/json', appProperties: { pid: x.id, updated: String(x.updated) } };
+  if (!fid) meta.parents = ['appDataFolder'];
+  const body = JSON.stringify(x), base = GAPI + '/upload/drive/v3/files' + (fid ? '/' + fid : ''), meth = fid ? 'PATCH' : 'POST';
+  if (body.length > sy.big) {
+    const r = await gfetch(base + '?uploadType=resumable&fields=id', { method: meth, headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json' }, body: JSON.stringify(meta) });
+    const loc = r.headers.get('Location'); if (!loc) throw new Error('upload');
+    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 300000); let r2; try { r2 = await fetch(loc, { method: 'PUT', signal: ac.signal, headers: { 'Content-Type': 'application/json' }, body }); } catch (e) { throw new Error('offline'); } finally { clearTimeout(tm); } if (!r2.ok) throw new Error('upload ' + r2.status); return (await r2.json()).id; }
+  const bd = 'wfsync' + Math.random().toString(36).slice(2);
+  const mp = '--' + bd + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + bd + '\r\nContent-Type: application/json\r\n\r\n' + body + '\r\n--' + bd + '--';
+  const r = await gfetch(base + '?uploadType=multipart&fields=id', { method: meth, headers: { 'Content-Type': 'multipart/related; boundary=' + bd }, body: mp });
+  if (r.status === 404) return drivePut(x, null); return (await r.json()).id; }
+const shortDay = t => new Date(t).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+async function syncRun() { // pull newer, push changed, apply deletions; newest save wins, both kept if both changed
+  const m = sm(), a = readProjs(), byId = new Map(a.map(x => [x.id, x])); let changed = false;
+  for (const id of m.del.slice()) { const f = m.files[id]; if (f && f.fid) await gfetch(GAPI + '/drive/v3/files/' + f.fid, { method: 'DELETE' }); delete m.files[id]; m.del = m.del.filter(q => q !== id); smSet(m); }
+  const remote = await driveList(), seen = new Set();
+  for (const f of remote) { await idle(); const id = (f.appProperties && f.appProperties.pid) || f.name.slice(4, -5), ru = +(f.appProperties && f.appProperties.updated) || 0; seen.add(id);
+    const x = byId.get(id), rec = m.files[id], base = rec ? rec.u : 0;
+    if (!x) { if (rec && rec.u >= ru) { await gfetch(GAPI + '/drive/v3/files/' + f.id, { method: 'DELETE' }); delete m.files[id]; continue; } // deleted here earlier
+      const p = await driveGet(f.id); if (p && p.state) { p.id = id; p.updated = p.updated || ru; a.push(p); byId.set(id, p); m.files[id] = { fid: f.id, u: p.updated }; changed = true; } continue; }
+    if (ru === x.updated) { m.files[id] = { fid: f.id, u: ru }; continue; }
+    const localCh = x.updated > base, remoteCh = ru > base;
+    if (remoteCh && !localCh) { const p = await driveGet(f.id); if (p && p.state) { Object.assign(x, { name: p.name, state: p.state, updated: p.updated || ru }); m.files[id] = { fid: f.id, u: x.updated }; changed = true; } continue; }
+    if (localCh && !remoteCh) { m.files[id] = { fid: await drivePut(x, f.id), u: x.updated }; continue; }
+    // both devices changed it since the last sync: keep both, newest keeps the name
+    const p = await driveGet(f.id); if (!p || !p.state) continue; p.updated = p.updated || ru;
+    const older = p.updated > x.updated ? { ...x } : p, newer = p.updated > x.updated ? p : x;
+    if (JSON.stringify(older.state) === JSON.stringify(newer.state)) { Object.assign(x, { name: newer.name, updated: newer.updated }); m.files[id] = { fid: newer === p ? f.id : await drivePut(x, f.id), u: x.updated }; changed = true; continue; } // same design on both: no copy
+    Object.assign(x, { name: newer.name, state: newer.state, updated: newer.updated });
+    const cp = { id: pid(), name: (older.name + ' (other device copy ' + shortDay(older.updated) + ')').slice(0, 90), updated: older.updated, state: older.state };
+    a.splice(a.indexOf(x) + 1, 0, cp); byId.set(cp.id, cp); changed = true;
+    m.files[id] = { fid: newer === p ? f.id : await drivePut(x, f.id), u: x.updated };
+    m.files[cp.id] = { fid: await drivePut(cp, null), u: cp.updated }; seen.add(cp.id); }
+  for (const x of a.slice()) { if (seen.has(x.id)) continue; await idle();
+    const rec = m.files[x.id];
+    if (rec && rec.fid && !seen.has(x.id) && x.updated <= rec.u) { a.splice(a.indexOf(x), 1); delete m.files[x.id]; changed = true; if (projId === x.id) projId = null; continue; } // deleted on the other device
+    if (!rec || x.updated > rec.u || !seen.has(x.id)) m.files[x.id] = { fid: await drivePut(x, null), u: x.updated }; }
+  m.last = Date.now(); m.connected = true; smSet(m);
+  if (changed) { a.sort((p, q) => q.updated - p.updated); writeProjs(a, true); clearTimeout(sy.listT); sy.listT = setTimeout(() => { if (!$('homeProjs').hidden) listProjs(); }, 400); }
+  return changed; }
+function syncNow(interactive) { const m = sm(); if (!m.connected && !interactive) return Promise.resolve();
+  if (!navigator.onLine) { sy.state = 'offline'; syncStatusUI(); return Promise.resolve(); }
+  if (sy.busy) { sy.again = true; return sy.busy; }
+  sy.state = 'busy'; syncStatusUI();
+  if (!interactive && !tokLoad()) { sy.state = 'auth'; syncStatusUI(); return Promise.resolve(); } // never pop up on its own
+  sy.busy = (interactive ? getToken(true) : Promise.resolve()).then(() => withTimeout(syncRun(), 600000, 'timeout')).then(() => { sy.state = 'ok'; rememberEmail(); },
+    e => { const msg = String(e && e.message); sy.state = msg === 'setup' ? 'setup' : (msg === 'auth' ? 'auth' : (!navigator.onLine || msg === 'offline' || e instanceof TypeError ? 'offline' : 'err')); sy.err = msg; console.warn('sync', e); })
+    .catch(e => console.warn('sync', e)).finally(() => { sy.busy = null; try { syncStatusUI(); } catch (e) { /* */ } if (sy.again) { sy.again = false; syncSoon(); } });
+  return sy.busy; }
+function syncSoon(fast) { if (!sm().connected) return; if (!tokLoad()) { sy.state = 'auth'; syncStatusUI(); return; } clearTimeout(sy.t); sy.t = setTimeout(() => syncNow(false), fast ? 300 : 6000); if (sy.state !== 'busy') { sy.state = navigator.onLine ? sy.state : 'offline'; syncStatusUI(); } }
+const agoShort = t => { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : ago(t); };
+function syncStatusUI() { const box = $('syncBox'); if (!box) return; const m = sm();
+  $('syncConnect').hidden = !!m.connected; $('syncNow').hidden = !m.connected;
+  const st = $('syncStatus'); st.className = 'syncst ' + sy.state;
+  st.textContent = !m.connected ? (sy.state === 'setup' ? 'Drive sync is not set up yet in this version.' : sy.state === 'auth' ? 'Could not connect – try again.' : 'Keep projects in step between your phone and laptop.')
+    : sy.state === 'busy' ? '☁ Syncing…' : sy.state === 'offline' ? 'Offline – will sync later' : sy.state === 'auth' ? 'Sign in again – tap Sync now to reconnect'
+    : sy.state === 'err' ? 'Sync problem – tap Sync now to try again' : sy.state === 'setup' ? 'Drive sync is not set up yet in this version.' : m.last ? '☁ Synced ' + agoShort(m.last) : '☁ Connected'; }
+window.wfSyncSoon = syncSoon;
+window.wfSyncDel = id => { const m = sm(); if (!m.connected) return; if (m.files[id]) { m.del.push(id); smSet(m); } syncSoon(1); };
+window.wfSyncOpen = () => { syncStatusUI(); syncSoon(1); };
+$('syncConnect').onclick = () => syncNow(true).then(() => { if (sy.state === 'ok') toast('Google Drive connected'); });
+$('syncNow').onclick = () => syncNow(!tokLoad());
+window.addEventListener('online', () => syncSoon(1)); window.addEventListener('offline', () => { sy.state = 'offline'; syncStatusUI(); });
+setInterval(() => { if (!$('homeProjs').hidden) syncStatusUI(); }, 30000);
+function syncBoot() { try { syncStatusUI(); if (sm().connected) { if (tokLoad()) setTimeout(() => syncNow(false), 4000); else { sy.state = 'auth'; syncStatusUI(); } } } catch (e) { console.warn('sync boot', e); } }
+function dedupeProjs() { const a = readProjs(), seen = new Map(), out = [], gone = [];
+  for (const x of a.slice().sort((p, q) => q.updated - p.updated)) { const k = JSON.stringify(x.state); if (seen.has(k)) { gone.push(x); continue; } seen.set(k, x); out.push(x); }
+  return { out, gone }; }
+$('projDedupe') && ($('projDedupe').onclick = async () => { const { out, gone } = dedupeProjs();
+  if (!gone.length) { toast('No exact duplicates found'); return; }
+  const k = await askDlg('Found ' + gone.length + ' exact duplicate' + (gone.length > 1 ? 's' : '') + ' (same design, saved more than once). Remove them and keep the newest of each?', [['go', 'Remove ' + gone.length, 'accent'], [null, 'Cancel']]); if (k !== 'go') return;
+  if (writeProjs(out)) { gone.forEach(x => { if (projId === x.id) projId = null; window.wfSyncDel && wfSyncDel(x.id); }); listProjs(); toast('Removed ' + gone.length + ' duplicate' + (gone.length > 1 ? 's' : '')); } });
+window.WF_SYNC = { now: syncNow, meta: sm, get state() { return sy.state; }, set big(v) { sy.big = v; }, forget() { tokForget(); }, dedupe: dedupeProjs };
+
 // ---------- boot ----------
-window.WF = { showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
+window.WF = { loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
 (async () => {
-  await kvLoad();
+  await kvLoad(); migrateProjs();
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
   // start on the home screen; projects open only from Projects
   $('loading').remove(); update(); commit();
   document.body.dataset.ready = '1';
+  syncBoot(); imgParamBoot();
 })().catch(err => { $('loading').textContent = 'Failed to load fonts: ' + err.message; console.error(err); });
 })();

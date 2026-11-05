@@ -46,8 +46,12 @@
 </header>
 <main>
   <section id="stageWrap">
+    <div id="layerRail" aria-label="Layers">
+      <div id="layerRailCount" class="lrcount"></div>
+      <div id="layerRailTrack" class="lrtrack" role="list"></div>
+    </div>
     <svg id="stage" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"></svg>
-    <div class="stagehint">Click letters (Shift/Ctrl/⌘ or Multi-select to add) · drag to move · box-drag empty space · Space/middle-drag pans · scroll zooms</div>
+    <div class="stagehint">Tap a layer chip above to switch · letters: tap the glyph · empty space deselects · box-drag or Multi-select to add</div>
     <div id="loading">Loading fonts…</div>
   </section>
   <aside id="panel" data-snap="small">

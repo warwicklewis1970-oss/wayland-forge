@@ -178,3 +178,12 @@ button.mini{padding:1px 7px;font-size:11px;margin-left:6px}
 .syncst.ok{color:#2e8b57}.syncst.offline,.syncst.auth,.syncst.err{color:#c77a00}
 
 .wfask{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}.wfaskbox{background:var(--panel,#222);color:inherit;border-radius:12px;padding:16px;max-width:360px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.5)}.wfaskbox p{margin:0 0 12px;font-weight:600}.wfaskbtn{display:flex;flex-direction:column;gap:8px}.wfaskbtn button{padding:12px;font-size:15px}
+
+/* v44: layer chips above the design */
+#layerRail{position:absolute;left:0;right:0;top:0;z-index:4;display:flex;align-items:center;gap:6px;padding:6px 8px 10px;background:linear-gradient(#1d1a17f2,#1d1a1700);pointer-events:none}
+#layerRail .lrcount{pointer-events:none;color:var(--amber);font-size:11px;font-weight:700;white-space:nowrap;flex:none}
+#layerRail .lrtrack{display:flex;gap:6px;overflow-x:auto;pointer-events:auto;-webkit-overflow-scrolling:touch;flex:1;scrollbar-width:none;padding-bottom:2px}
+#layerRail .lrtrack::-webkit-scrollbar{display:none}
+#layerRail button.lrchip{flex:none;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 12px;border-radius:999px;font-size:12px;line-height:1.2;min-height:34px;background:#2a2520e6;border:1px solid var(--line);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
+#layerRail button.lrchip.on{background:var(--amber);color:#1a1410;border-color:var(--amber);font-weight:700}
+#layerRail button.lrchip:active{transform:scale(.97)}

@@ -448,10 +448,10 @@ function textEl(L, editor) {
   {
     const g = layoutLayer(L).map(q => {
       if (!editor) return `<path d="${q.d}" transform="${q.tr}"/>`;
-      const hi = isSel(L.id, q.i), at = ` data-k="ch" data-l="${L.id}" data-i="${q.i}"`, bb = q.bb, pd = 6;
-      // transparent bbox hit-rect: thin strokes, counters and gaps between strokes all grab the letter
-      const hit = bb ? `<rect data-hit="1"${at} x="${f2(bb.x1 - pd)}" y="${f2(bb.y1 - pd)}" width="${f2(bb.x2 - bb.x1 + 2 * pd)}" height="${f2(bb.y2 - bb.y1 + 2 * pd)}" pointer-events="all" ${hi ? 'fill="#e0a043" fill-opacity="0.18" stroke="#e0a043" stroke-width="1.5" stroke-dasharray="4 3"' : 'fill="none"'}/>` : '';
-      return `<g transform="${q.tr}"><path d="${q.d}"${at}${hi ? ' stroke="#e0a043" stroke-width="3"' : ''}/>${hit}</g>`;
+      const hi = isSel(L.id, q.i), at = ` data-k="ch" data-l="${L.id}" data-i="${q.i}"`, bb = q.bb, pd = 1;
+      // tight bbox for marquee only (pointer-events none); actual taps hit the glyph path + a thin invisible stroke so nearby letters are not stolen
+      const hit = bb ? `<rect data-hit="1" data-l="${L.id}" data-i="${q.i}" x="${f2(bb.x1 - pd)}" y="${f2(bb.y1 - pd)}" width="${f2(bb.x2 - bb.x1 + 2 * pd)}" height="${f2(bb.y2 - bb.y1 + 2 * pd)}" pointer-events="none" ${hi ? 'fill="#e0a043" fill-opacity="0.18" stroke="#e0a043" stroke-width="1.5" stroke-dasharray="4 3"' : 'fill="none"'}/>` : '';
+      return `<g transform="${q.tr}"><path d="${q.d}"${at} pointer-events="all"${hi ? ' stroke="#e0a043" stroke-width="3"' : ''}/><path d="${q.d}"${at} fill="none" stroke="transparent" stroke-width="10" pointer-events="stroke"/>${hit}</g>`;
     }).join('');
     return L.style === 'hollow' ? `<g fill="none" stroke="${L.color}" stroke-width="2.5" stroke-linejoin="round">${g}</g>` : `<g fill="${L.color}">${g}</g>`;
   }
@@ -560,7 +560,52 @@ function syncUI() {
 function target(scope) {
   return scope === 'shape' ? curShape() : scope === 'base' ? SB() : scope === 'layer' ? curLayer() : scope === 'orn' ? curOrn() : scope === 'img' ? IM() : scope === 'doc' ? S : null;
 }
-function update() { render(); syncUI(); }
+const ORN_LABEL = { star: 'Star', dot: 'Dot', holly1: 'Holly', holly2: 'Holly', note: 'Note', notes: 'Notes' };
+function railLabel(kind, obj) {
+  if (kind === 'text') { const t = (obj.text || '').trim(); return 'T ' + (t ? t.slice(0, 16) : '(empty)'); }
+  if (kind === 'orn') return ORN_LABEL[obj.type] || 'Ornament';
+  if (kind === 'img') return (obj.name || 'Image').slice(0, 16);
+  if (kind === 'shape') return (obj.name || obj.base.shape).slice(0, 16);
+  return 'Layer';
+}
+function railOn(it) {
+  if (it.kind === 'orn') return sel.orn === it.id;
+  if (it.kind === 'img') return !!sel.img && sel.slot === it.id;
+  if (it.kind === 'text') return !sel.orn && !sel.img && sel.layer === it.id;
+  if (it.kind === 'shape') return sel.shape === it.id && !sel.orn && !sel.img && !sel.letters.length;
+  return false;
+}
+function selectRail(kind, id) {
+  sel.letters = [];
+  if (kind === 'text') {
+    const L = S.layers.find(l => l.id === id); if (!L) return;
+    sel.layer = id; sel.orn = null; sel.img = false; sel.shape = shapeOf(L).id;
+    openSec('sec-text');
+  } else if (kind === 'orn') {
+    sel.orn = id; sel.img = false; openSec('sec-orn');
+  } else if (kind === 'img') {
+    sel.slot = id; sel.img = true; sel.orn = null; openSec('sec-img');
+  } else if (kind === 'shape') {
+    sel.shape = id; sel.orn = null; sel.img = false; fixSel(); openSec('sec-shape');
+  }
+  try { if (isSheet() && panel.dataset.snap === 'collapsed') setSnap('small'); } catch (e) { /* */ }
+  update();
+}
+function renderLayerRail() {
+  const track = $('layerRailTrack'), count = $('layerRailCount'), rail = $('layerRail');
+  if (!track || !count) return;
+  const items = [];
+  if (S.shapes.length > 1) S.shapes.slice().reverse().forEach(sh => items.push({ kind: 'shape', id: sh.id, label: '⬡ ' + railLabel('shape', sh) }));
+  S.layers.forEach(l => items.push({ kind: 'text', id: l.id, label: railLabel('text', l) }));
+  S.ornaments.forEach(o => items.push({ kind: 'orn', id: o.id, label: '✦ ' + railLabel('orn', o) }));
+  S.images.slice().reverse().forEach(im => items.push({ kind: 'img', id: im.id, label: '🖼 ' + railLabel('img', im) }));
+  count.textContent = items.length + ' layer' + (items.length === 1 ? '' : 's');
+  if (rail) rail.hidden = items.length === 0;
+  const html = items.map(it => `<button type="button" class="lrchip${railOn(it) ? ' on' : ''}" data-rk="${it.kind}" data-rid="${it.id}" title="${esc(it.label)}">${esc(it.label)}</button>`).join('');
+  if (track.dataset.html === html) return; // skip DOM thrash on phone
+  track.dataset.html = html; track.innerHTML = html;
+}
+function update() { render(); syncUI(); renderLayerRail(); }
 function commit() {
   const snap = JSON.stringify(S);
   if (hist.stack[hist.i] === snap) return;
@@ -619,7 +664,7 @@ function migrateProjs() { const a = readProjs(), seen = new Set(); let ch = fals
   if (ch) writeProjs(a, true); }
 const writeProjs = (a, quiet) => { try { const ok = kvSet(PROJS, JSON.stringify(a)); if (ok && !quiet && window.wfSyncSoon) wfSyncSoon(); return ok; } catch (e) { alert('Not enough space in this browser to save the project (a large picture?). Use Download file instead.'); return false; } };
 function saveNow() { nameBtnUI(); if (homeOpen) return; try { kvSet(STORE, JSON.stringify(S)); kvSet(META, JSON.stringify({ projId, t: Date.now() })); } catch (e) { /* storage full (large image) */ }
-  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x && JSON.stringify(x.state) !== JSON.stringify(S)) { x.state = S; x.updated = Date.now(); writeProjs(a); } } } // only a real change counts as newer (matters for sync)
+  if (projId) { const a = readProjs(), x = a.find(q => q.id === projId); if (x && JSON.stringify(x.state) !== JSON.stringify(S)) { x.state = JSON.parse(JSON.stringify(S)); x.updated = Date.now(); writeProjs(a); } } } // only a real change counts as newer (matters for sync); deep-clone so editor edits don't mutate the Projects list
 let saveT; function persist() { if (homeOpen) return; clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
 
 // ---------- control bindings ----------
@@ -674,7 +719,20 @@ function archiveSession() { // keep an unnamed last session so starting fresh ne
   try { const m = JSON.parse(kvGet(META) || '{}'), raw = kvGet(STORE); if (!raw || m.projId) return;
     const st = JSON.parse(raw), d = defaults(); if (JSON.stringify(st.layers.map(l => l.text)) === JSON.stringify(d.layers.map(l => l.text)) && !(st.images || []).length && !st.image && st.shapes && st.shapes.length === 1 && JSON.stringify(st.shapes[0].base) === JSON.stringify(d.shapes[0].base)) return;
     const a = readProjs(); if (a.some(q => JSON.stringify(q.state) === JSON.stringify(st))) { kvSet(META, JSON.stringify({ projId: null, archived: true })); return; } a.unshift({ id: pid(), name: 'Untitled ' + new Date(m.t || Date.now()).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), updated: m.t || Date.now(), state: st }); writeProjs(a); kvSet(META, JSON.stringify({ projId: null, archived: true })); } catch (e) { /* ignore */ } }
-function openState(st, id, keepLast) { if (!keepLast) archiveSession(); S = sanitize(st); projId = id; sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false }; fixSel(); hist.stack = []; hist.i = -1; closeHome(); update(); commit(); fitView(); saveNow(); }
+function openState(st, id, keepLast) {
+  clearTimeout(saveT); saveT = null; drag = null; mode.multi = false;
+  if (!keepLast) archiveSession();
+  // deep-clone so Projects list / Drive sync never share live objects with the editor
+  S = sanitize(JSON.parse(JSON.stringify(st)));
+  projId = id;
+  sel = { layer: null, shape: S.shapes[0].id, letters: [], orn: null, img: false, slot: null };
+  fixSel(); hist.stack = []; hist.i = -1;
+  geoCache.key = ''; pathCache.clear(); procCache.clear();
+  closeHome();
+  try { if (isSheet() && panel.dataset.snap === 'collapsed') setSnap('small'); } catch (e) { /* */ }
+  update(); commit(); fitView(); saveNow();
+  requestAnimationFrame(() => { try { fitView(); update(); } catch (e) { /* */ } });
+}
 const slug = t => (String(t || '').normalize('NFKD').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('') || '').slice(0, 20);
 function designName() { return projName() || S.name || ''; }
 function nameBtnUI() { const b = $('nameBtn'); if (b) { const n = designName(); b.textContent = (n || 'Untitled') + ' ✎'; b.title = 'Design name (used for file names). Tap to rename.'; } }
@@ -717,6 +775,10 @@ $('projList').addEventListener('click', e => { const b = e.target.closest('[data
 $('homeNew').onclick = () => { archiveSession(); openState(defaults(), null); window.dispatchEvent(new Event('wf-newdesign')); };
 $('homeProjects').onclick = () => homeView('projs');
 $('homeBack').onclick = () => homeView('main');
+($('layerRailTrack') || { addEventListener() {} }).addEventListener('click', e => {
+  const b = e.target.closest('[data-rk]'); if (!b) return;
+  e.preventDefault(); selectRail(b.dataset.rk, b.dataset.rid);
+});
 $('homeTour').onclick = () => { if (homeOpen && !$('homeTour').dataset.keep) { archiveSession(); openState(defaults(), null); } window.dispatchEvent(new Event('wf-tutorial')); };
 $('homeLoad').addEventListener('change', e => { $('loadProj').files = e.target.files; $('loadProj').dispatchEvent(new Event('change')); });
 $('homeBtn').onclick = () => showHome('main');
@@ -836,7 +898,7 @@ stage.addEventListener('pointerdown', e => {
       else { sel.letters.push({ l, i }); startLetterDrag(p); }
     } else if (isSel(l, i)) { startLetterDrag(p); drag.collapse = { l, i }; } // drag the whole group; a plain click narrows to this one
     else { sel.letters = [{ l, i }]; startLetterDrag(p); }
-    openSec('sec-letter');
+    drag.openLetter = true; // open letter panel on pointerup if this was a real letter tap (not a mis-hit drag elsewhere)
   } else if (k === 'sh') { const sh = S.shapes.find(s => s.id === t.dataset.id); sel.shape = sh.id; sel.orn = null; sel.letters = []; fixSel(); drag = { obj: sh, x0: sh.x, y0: sh.y, p }; if (S.shapes.length > 1) openSec('sec-shape'); }
   else if (k === 'orn') { sel.orn = t.dataset.id; sel.letters = []; const o = curOrn(); drag = { obj: o, x0: o.x, y0: o.y, p, orn: true }; openSec('sec-orn'); }
   else if (k === 'hole') { sel.orn = null; sel.letters = []; drag = { obj: S.hole, x0: S.hole.x, y0: S.hole.y, p }; openSec('sec-orn'); }
@@ -872,6 +934,7 @@ function endDrag(e) {
     if (sel.letters.length) openSec('sec-letter');
   }
   if (d.collapse && !d.moved) sel.letters = [d.collapse];
+  if (d.openLetter && !d.moved && sel.letters.length) openSec('sec-letter');
   update(); if (d.moved && !d.mq && !d.pan) commit();
 }
 stage.addEventListener('pointerup', endDrag);
@@ -914,8 +977,9 @@ $('exportBtn').addEventListener('click', async () => {
 $('saveProj').onclick = () => download(new Blob([JSON.stringify({ app: 'wayland-forge', version: 1, state: S }, null, 1)], { type: 'application/json' }), (designName() ? fileBase() : 'MyBadge') + ' project.json');
 $('loadProj').addEventListener('change', async e => {
   const file = e.target.files[0]; if (!file) return; e.target.value = '';
-  try { const j = JSON.parse(await file.text()); if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project'); if (homeOpen) { archiveSession(); openState(j.state, null); } else { S = sanitize(j.state); fixSel(); update(); commit(); } }
-  catch (err) { alert('Could not load project: ' + err.message); }
+  try { const j = JSON.parse(await file.text()); if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project');
+    saveNow(); openState(j.state, null); // always full reset (state, sel, undo, caches) so phone does not need a reopen
+  } catch (err) { alert('Could not load project: ' + err.message); }
 });
 
 // ---------- panel: accordion, presets, mobile sheet ----------
@@ -1343,8 +1407,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v43';
-const WHATS_NEW = "v43: Opening the app no longer asks you to sign in to Google – Drive sync only asks when you tap Sync now. Save asks Update or Save as new, no more piling-up copies, and a Remove duplicates button in Projects. Laser files are exactly the same as before.";
+const APP_VERSION = 'v44';
+const WHATS_NEW = "v44: Layer chips above the design – see every text, ornament and image layer and tap one to switch. Switching Projects now fully replaces the design (no need to close and reopen). Accidental letter taps are harder to trigger. Laser files are exactly the same as before.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1466,20 +1530,20 @@ async function syncRun() { // pull newer, push changed, apply deletions; newest 
     if (rec && rec.fid && !seen.has(x.id) && x.updated <= rec.u) { a.splice(a.indexOf(x), 1); delete m.files[x.id]; changed = true; if (projId === x.id) projId = null; continue; } // deleted on the other device
     if (!rec || x.updated > rec.u || !seen.has(x.id)) m.files[x.id] = { fid: await drivePut(x, null), u: x.updated }; }
   m.last = Date.now(); m.connected = true; smSet(m);
-  if (changed) { a.sort((p, q) => q.updated - p.updated); writeProjs(a, true); if (!$('homeProjs').hidden) listProjs(); }
+  if (changed) { a.sort((p, q) => q.updated - p.updated); writeProjs(a, true); clearTimeout(sy.listT); sy.listT = setTimeout(() => { if (!$('homeProjs').hidden) listProjs(); }, 400); }
   return changed; }
 function syncNow(interactive) { const m = sm(); if (!m.connected && !interactive) return Promise.resolve();
-  if (!navigator.onLine) { sy.state = 'offline'; syncUI(); return Promise.resolve(); }
+  if (!navigator.onLine) { sy.state = 'offline'; syncStatusUI(); return Promise.resolve(); }
   if (sy.busy) { sy.again = true; return sy.busy; }
-  sy.state = 'busy'; syncUI();
-  if (!interactive && !tokLoad()) { sy.state = 'auth'; syncUI(); return Promise.resolve(); } // never pop up on its own
+  sy.state = 'busy'; syncStatusUI();
+  if (!interactive && !tokLoad()) { sy.state = 'auth'; syncStatusUI(); return Promise.resolve(); } // never pop up on its own
   sy.busy = (interactive ? getToken(true) : Promise.resolve()).then(() => withTimeout(syncRun(), 600000, 'timeout')).then(() => { sy.state = 'ok'; rememberEmail(); },
     e => { const msg = String(e && e.message); sy.state = msg === 'setup' ? 'setup' : (msg === 'auth' ? 'auth' : (!navigator.onLine || msg === 'offline' || e instanceof TypeError ? 'offline' : 'err')); sy.err = msg; console.warn('sync', e); })
-    .catch(e => console.warn('sync', e)).finally(() => { sy.busy = null; try { syncUI(); } catch (e) { /* */ } if (sy.again) { sy.again = false; syncSoon(); } });
+    .catch(e => console.warn('sync', e)).finally(() => { sy.busy = null; try { syncStatusUI(); } catch (e) { /* */ } if (sy.again) { sy.again = false; syncSoon(); } });
   return sy.busy; }
-function syncSoon(fast) { if (!sm().connected) return; if (!tokLoad()) { sy.state = 'auth'; syncUI(); return; } clearTimeout(sy.t); sy.t = setTimeout(() => syncNow(false), fast ? 300 : 6000); if (sy.state !== 'busy') { sy.state = navigator.onLine ? sy.state : 'offline'; syncUI(); } }
+function syncSoon(fast) { if (!sm().connected) return; if (!tokLoad()) { sy.state = 'auth'; syncStatusUI(); return; } clearTimeout(sy.t); sy.t = setTimeout(() => syncNow(false), fast ? 300 : 6000); if (sy.state !== 'busy') { sy.state = navigator.onLine ? sy.state : 'offline'; syncStatusUI(); } }
 const agoShort = t => { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : ago(t); };
-function syncUI() { const box = $('syncBox'); if (!box) return; const m = sm();
+function syncStatusUI() { const box = $('syncBox'); if (!box) return; const m = sm();
   $('syncConnect').hidden = !!m.connected; $('syncNow').hidden = !m.connected;
   const st = $('syncStatus'); st.className = 'syncst ' + sy.state;
   st.textContent = !m.connected ? (sy.state === 'setup' ? 'Drive sync is not set up yet in this version.' : sy.state === 'auth' ? 'Could not connect – try again.' : 'Keep projects in step between your phone and laptop.')
@@ -1487,12 +1551,12 @@ function syncUI() { const box = $('syncBox'); if (!box) return; const m = sm();
     : sy.state === 'err' ? 'Sync problem – tap Sync now to try again' : sy.state === 'setup' ? 'Drive sync is not set up yet in this version.' : m.last ? '☁ Synced ' + agoShort(m.last) : '☁ Connected'; }
 window.wfSyncSoon = syncSoon;
 window.wfSyncDel = id => { const m = sm(); if (!m.connected) return; if (m.files[id]) { m.del.push(id); smSet(m); } syncSoon(1); };
-window.wfSyncOpen = () => { syncUI(); syncSoon(1); };
+window.wfSyncOpen = () => { syncStatusUI(); syncSoon(1); };
 $('syncConnect').onclick = () => syncNow(true).then(() => { if (sy.state === 'ok') toast('Google Drive connected'); });
 $('syncNow').onclick = () => syncNow(!tokLoad());
-window.addEventListener('online', () => syncSoon(1)); window.addEventListener('offline', () => { sy.state = 'offline'; syncUI(); });
-setInterval(() => { if (!$('homeProjs').hidden) syncUI(); }, 30000);
-function syncBoot() { try { syncUI(); if (sm().connected) { if (tokLoad()) setTimeout(() => syncNow(false), 4000); else { sy.state = 'auth'; syncUI(); } } } catch (e) { console.warn('sync boot', e); } }
+window.addEventListener('online', () => syncSoon(1)); window.addEventListener('offline', () => { sy.state = 'offline'; syncStatusUI(); });
+setInterval(() => { if (!$('homeProjs').hidden) syncStatusUI(); }, 30000);
+function syncBoot() { try { syncStatusUI(); if (sm().connected) { if (tokLoad()) setTimeout(() => syncNow(false), 4000); else { sy.state = 'auth'; syncStatusUI(); } } } catch (e) { console.warn('sync boot', e); } }
 function dedupeProjs() { const a = readProjs(), seen = new Map(), out = [], gone = [];
   for (const x of a.slice().sort((p, q) => q.updated - p.updated)) { const k = JSON.stringify(x.state); if (seen.has(k)) { gone.push(x); continue; } seen.set(k, x); out.push(x); }
   return { out, gone }; }
@@ -1503,7 +1567,7 @@ $('projDedupe') && ($('projDedupe').onclick = async () => { const { out, gone } 
 window.WF_SYNC = { now: syncNow, meta: sm, get state() { return sy.state; }, set big(v) { sy.big = v; }, forget() { tokForget(); }, dedupe: dedupeProjs };
 
 // ---------- boot ----------
-window.WF = { loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems };
+window.WF = { loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
 (async () => {
   await kvLoad(); migrateProjs();
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
