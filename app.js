@@ -283,7 +283,7 @@ function ornSvg(o, pic) { // inner markup for one ornament; pic=false => single 
   const p = ornParts(o); if (!p) return '';
   return `<path fill-rule="evenodd" d="${p.body}"/>` + (p.berries ? `<path d="${p.berries}"${pic && o.color2 ? (o.style === 'line' ? ` stroke="${o.color2}"` : ` fill="${o.color2}"`) : ''}/>` : '');
 }
-const ornPaint = o => o.style === 'line' ? ` fill="none" stroke="${o.color}" stroke-width="2.5" stroke-linejoin="round"` : ` fill="${o.color}"`; // Fill (default) or Line, like the letters
+const ornPaint = o => o.style === 'line' ? ` fill="none" stroke="${o.color}" stroke-width="${o.lineWidth ? o.lineWidth / mmPerArt() : 2.5}" stroke-linejoin="round"` : ` fill="${o.color}"`; // Fill (default) or Line, like the letters
 function starD(r) {
   let d = ''; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.42 : r; d += (i ? 'L' : 'M') + f2(rr * Math.cos(a)) + ' ' + f2(rr * Math.sin(a)); }
   return d + 'Z';
@@ -564,7 +564,8 @@ function syncUI() {
     $('ornFollow').checked = fo; $('ornFree').hidden = fo; $('ornPathF').hidden = !fo; $('ornTurn').checked = !!f.turn; $('ornPath').value = f.path || 'outer'; $('ornRotRow').hidden = fo && !!f.turn;
     $('ornShapeSel').innerHTML = S.shapes.map(x => `<option value="${x.id}">${x.name}</option>`).join(''); $('ornShapeSel').value = f.shape || S.shapes[0].id; $('ornShapeSel').parentElement.hidden = S.shapes.length < 2;
     const pr = partnerOf(oc); $('ornLink').hidden = !pr; $('mirrorOrn').hidden = !!pr; }
-  $('ornFields').hidden = !curOrn(); $('ornBerry').hidden = !(curOrn() && /holly/.test(curOrn().type)); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
+  const isLineOrn = curOrn() && curOrn().style === 'line'; $('ornWidthRow').hidden = !isLineOrn; $('ornWidthHint').hidden = !isLineOrn; if (isLineOrn && document.activeElement !== $('ornWidth')) $('ornWidth').value = isLineOrn.lineWidth > 0 ? String(isLineOrn.lineWidth) : '';
+  $('ornFields').hidden = !curOrn(); $('ornWidthRow').hidden = !isLineOrn || $('ornFields').hidden; $('ornWidthHint').hidden = $('ornWidthRow').hidden; $('ornBerry').hidden = !(curOrn() && /holly/.test(curOrn().type)); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
   $('imgFields').hidden = !IM(); $('imgClipRow').hidden = false; if (IM()) { const im = IM(); $('imgClipLine').innerHTML = S.shapes.map(x => ['inner', 'outer'].map(l => `<option value="${x.id}|${l}">${esc(x.name)} – ${l} line</option>`).join('')).join(''); $('imgClipLine').value = clipShapeOf(im).id + '|' + (im.clipLine || 'inner'); $('imgClipLine').parentElement.hidden = clipOf(im) === 'free'; } document.querySelectorAll('[data-slotbtn]').forEach(b => b.setAttribute('aria-pressed', String((sel.slot || 1) === +b.dataset.slotbtn)));
   $('imgSel').innerHTML = S.images.length ? S.images.slice().reverse().map(i => `<option value="${i.id}"${i.id === sel.slot ? ' selected' : ''}>${imgName(i)}</option>`).join('') : '<option value="">No image layers yet</option>';
   ['imgRen', 'imgUp', 'imgDown', 'delImg'].forEach(k => $(k).disabled = !IM()); $('imgUploadRow').hidden = !IM(); $('imgDepth').value = IM() && IM().behind ? 'behind' : 'front';
@@ -712,6 +713,11 @@ act('resetLetters', () => { const L = curLayer(); if (L) L.letters = {}; });
 const addOrn = type => { const o = { id: uid(), type, style: 'fill', x: C, y: C, r: ORN_R[type] || 20, rot: 0, color: (type === 'holly1' || type === 'holly2') ? '#1f6b34' : SB().stroke, ...(type === 'holly1' || type === 'holly2' ? { color2: '#c0262d' } : {}) }; S.ornaments.push(o); sel.orn = o.id; };
 act('addStar', () => addOrn('star')); act('addDot', () => addOrn('dot')); act('addHolly1', () => addOrn('holly1')); act('addHolly2', () => addOrn('holly2')); act('addNote', () => addOrn('note')); act('addNotes', () => addOrn('notes'));
 act('ornStyleAll', () => { const o = curOrn(); if (!o) return; const v = o.style === 'line' ? 'line' : 'fill'; S.ornaments.forEach(x => { x.style = v; }); toast('All ornaments set to ' + (v === 'line' ? 'Line (outline)' : 'Fill (solid)')); });
+$('ornWidth').placeholder = 'Suggest 0.6'; $('ornWidth').addEventListener('change', () => { const o = curOrn(); if (!o || o.style !== 'line') return; const v = +$('ornWidth').value;
+  if (!(v >= 0.1 && v <= 1.2)) { $('ornWidth').value = o.lineWidth > 0 ? String(o.lineWidth) : ''; return; }
+  o.lineWidth = Math.round(v * 10) / 10; const pr = partnerOf(o); if (pr && pr.style === 'line') pr.lineWidth = o.lineWidth; // applies only when Line (outline) is selected (deliberate laser/output opt-in)
+  update(); commit(); o; });
+act('ornWidthAll', () => { const o = curOrn(); if (!o || o.style !== 'line') return; const w = o.lineWidth || 0.6; S.ornaments.forEach(x => { if (x.style === 'line') x.lineWidth = w; }); toast('Line (outline) ornaments use ' + w + ' mm width'); });
 act('mirrorOrn', () => { const o = curOrn(); if (!o) return; const c = { ...o, id: uid(), follow: o.follow ? { ...o.follow } : undefined }; if (Math.abs(o.x - C) < 1) o.x = C - 120; c.pair = o.id; o.pair = c.id; mirrorInto(o, c); S.ornaments.push(c); sel.orn = c.id; });
 act('delOrn', () => { const p = partnerOf(curOrn()); if (p) delete p.pair; S.ornaments = S.ornaments.filter(o => o.id !== sel.orn); });
 act('clearOrn', () => { S.ornaments = []; });
@@ -1097,7 +1103,7 @@ function laserPart0(it, kind) {
   }
   if (k === 'hole') return S.hole && S.hole.on && kind !== 'pic' ? `<path d="${holeD()}"/>` : '';
   if (k === 'fill') return `<path d="${ringD(0)}"${kind === 'pic' ? ` fill="${b.fill}"` : ''}/>`;
-  if (k === 'orn') return S.ornaments.filter(o => !it.ornStyle || (o.style === 'line' ? 'line' : 'fill') === it.ornStyle).map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' ? ornPaint(o) : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
+  if (k === 'orn') return S.ornaments.filter(o => !it.ornStyle || (o.style === 'line' ? 'line' : 'fill') === it.ornStyle).filter(o => it.wide ? o.lineWidth > 0 : !(o.style === 'line' && o.lineWidth > 0)).map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' || kind === 'wide' ? ornPaint(o) : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
   if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? (L.style === 'hollow' ? ` fill="none" stroke="${L.color}" stroke-width="2.5"` : ` fill="${L.color}"`) : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
   if (k.startsWith('img:') && (it.im || S.images.find(i => 'img:' + i.id === k))) {
     const im = it.im || S.images.find(i => 'img:' + i.id === k), pr = procImage(im), vec = pr && pr.paths;
@@ -1274,7 +1280,10 @@ async function laserSteps() { await imgReady();
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
     data: async () => pngDpi(await lzPNG(W, H, dpi, phBody(), false, false, cPh, cMask), dpi) });
   const isLine = it => (it.key === 'orn' && it.ornStyle === 'line') || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
-  const eLine = etch.filter(isLine), eFill = etch.filter(it => !isLine(it)), edpi = Math.min(Math.max(dpi * 2, 508), Math.floor(7900 * 25.4 / Math.max(W, H)));
+  const wideOrns = S.ornaments.filter(o => o.style === 'line' && o.lineWidth > 0);
+  const eWide = wideOrns.length ? etch.filter(it => it.key === 'orn' && it.ornStyle === 'line').map(it => ({ ...it, wide: true })) : [];
+  const eThin = etch.filter(it => !(it.key === 'orn' && it.ornStyle === 'line') || wideOrns.length !== S.ornaments.filter(o => o.style === 'line').length);
+  const eLine = [...eThin.filter(isLine), ...eWide].filter(isLine), eFill = etch.filter(it => !isLine(it)), edpi = Math.min(Math.max(dpi * 2, 508), Math.floor(7900 * 25.4 / Math.max(W, H)));
   const what = l => [...new Set(l.map(x => x.key === 'orn' ? 'ornaments' : x.key.startsWith('img') ? 'image' : x.key.includes('t:') ? 'text' : 'lines'))].join('+');
   const eAsPng = ($('lzEtch') ? $('lzEtch').value : 'png') !== 'svg', eBody = `<g fill="#000">${eFill.map(it => laserPart(it, 'fill')).join('')}</g>` + mk(' fill="#000"');
   if (eFill.length && eAsPng && nc) st.push({ kind: 'ETCH', what: what(eFill), job: 'fill', short: `etch fill ${lzTagOf('fill', ef)}`, type: 'nc', items: eFill, mode: `G-code, ${ef.mode === 'vec' ? 'Vector outlines of the filled shapes' : `${MN[ef.mode]}, ${lpm} lines/mm`}, speed ${efF}, power ${efS}%`,
@@ -1287,12 +1296,16 @@ async function laserSteps() { await imgReady();
     warn: 'Solid filled letters/shapes, burned as tight lines. This burns HOTTER than the picture version at the same power - start well below 50% and use a fast speed.',
     data: async () => lzHatch(W, H, eBody, 'etch fill lines') });
   const lnc = ($('lzLine') ? $('lzLine').value : 'nc') !== 'svg', lb = bz('lines'), ci = bz('cin'), co = bz('cout');
-  if (eLine.length && lnc) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', job: 'lines', short: `etch lines ${lzTagOf('lines', lb)}`, type: 'nc', items: eLine, mode: `G-code outlines, speed ${lb.F}, power ${lb.P}%`,
+  const eWideFill = eLine.filter(it => it.wide), ePlainLine = eLine.filter(it => !it.wide);
+  if (eWideFill.length) st.push({ kind: 'ETCH', what: 'ornaments thick outline', job: 'lines', short: `etch thick outlines ${lzTagOf('lines', lb).replace(/^(?:VEC|DITH)/, 'LTL')}`, type: 'nc', items: eWideFill, mode: `G-code, Line To Line filled ${[...new Set(wideOrns.map(o => f2(o.lineWidth)))].join('/') } mm bands, speed ${lb.F}, power ${lb.P}%`,
+    warn: 'NEW thicker outline option: real filled bands (not a doubled outline). Uses your usual outline-lettering settings. More burned area and time. Artwork width, not guaranteed burn width; test on scrap.',
+    data: async () => lzGcode(W, H, dpi, eWideFill.map(it => laserPart(it, 'wide')).join('') + mk(''), true, cMask, lb.F, lb.P, smax, 'ornaments thick outline', false) });
+  if (ePlainLine.length && lnc) st.push({ kind: 'ETCH', what: what(ePlainLine) + ' outline', job: 'lines', short: `etch lines ${lzTagOf('lines', lb)}`, type: 'nc', items: eLine, mode: `G-code outlines, speed ${lb.F}, power ${lb.P}%`,
     warn: 'Outline etch (hollow letters, line ornaments). Speed and power are in the file.',
-    data: async () => lzVecG(W, H, eLine.map(it => laserPart(it, 'fill')).join('') + mk(''), 'etch lines', lb.F, lb.P, smax, 1) });
-  if (eLine.length && !lnc) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', job: 'lines', short: 'etch lines', type: 'svg', items: eLine, mode: 'Vector (SVG) smooth outlines - LaserGRBL takes the size from the file',
+    data: async () => lzVecG(W, H, ePlainLine.map(it => laserPart(it, 'fill')).join('') + mk('') + (eWideFill.length ? `<g fill="#0ff" stroke="none">${eWideFill.map(it => laserPart(it, 'wide')).join('')}</g>` : ''), 'etch lines', lb.F, lb.P, smax, 1) });
+  if (ePlainLine.length && !lnc) st.push({ kind: 'ETCH', what: what(eLine) + ' outline', job: 'lines', short: 'etch lines', type: 'svg', items: eLine, mode: 'Vector (SVG) smooth outlines - LaserGRBL takes the size from the file',
     warn: 'Outline etch (hollow letters, line ornaments). Etch power, 1 pass.',
-    data: async () => lzVec(W, H, eLine.map(it => laserPart(it, 'fill')).join('') + mk(''), 'etch lines') });
+    data: async () => lzVec(W, H, ePlainLine.map(it => laserPart(it, 'fill')).join('') + mk(''), 'etch lines') });
   const cut = (list, kind, label, warn) => { const b = label === 'inside' ? ci : co, job = label === 'inside' ? 'cin' : 'cout';
     if (lnc) st.push({ kind: 'CUT', job, what: label, short: `cut ${label} ${lzTagOf(job, b)}`, type: 'nc', items: list, mode: `G-code cut, speed ${b.F}, power ${b.P}%, ${b.passes} pass${b.passes > 1 ? 'es' : ''}`, warn,
       data: async () => lzVecG(W, H, list.map(it => laserPart(it, kind)).join('') + mk(''), 'cut ' + label, b.F, b.P, smax, b.passes) });
@@ -1368,7 +1381,7 @@ function lzStepText(s) {
     `  Then set speed and S-MAX > Create!  Frame now shows just the picture, in the same place it will burn.`); }
   else if (s.type === 'nc') L.push(`  G-code file: File > Open File > pick it > Start. No box opens - nothing to size or offset, it lines up by itself.`, `  Power/speed: ${s.mode}. To adjust, use the S [1.00x] (power) and G1 [1.00x] (speed) buttons in LaserGRBL's bottom bar.`);
   else L.push(`  LaserGRBL: File > Open File > pick it > set speed and S-MAX > Create!  Nothing else to set - it lines up by itself.`);
-  L.push(`  ${s.warn}`, `  Mode ${LZ_TAG[s.b.mode]}. Speed ${s.b.F}, power ${s.b.P}%${s.kind === 'CUT' ? `, passes ${s.b.passes}` : ''}${s.b.untested ? ' (starting guess)' : ''}${s.type === 'nc' ? ' - already in the file.' : ` - type in LaserGRBL (S-MAX ${Math.round(s.b.P / 100 * (+($('lzSmax') || {}).value || 1000))}).`}`, `  Result: ______________`, ``);
+  L.push(`  ${s.warn}`, `  Mode ${s.what === 'ornaments thick outline' ? 'LTL' : LZ_TAG[s.b.mode]}. Speed ${s.b.F}, power ${s.b.P}%${s.kind === 'CUT' ? `, passes ${s.b.passes}` : ''}${s.b.untested ? ' (starting guess)' : ''}${s.type === 'nc' ? ' - already in the file.' : ` - type in LaserGRBL (S-MAX ${Math.round(s.b.P / 100 * (+($('lzSmax') || {}).value || 1000))}).`}`, `  Result: ______________`, ``);
   return L.join('\r\n');
 }
 function lzReadme(st, marks) {
@@ -1430,8 +1443,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v47';
-const WHATS_NEW = "v47: Add Free text for a straight line anywhere in your design. Use its Text, Font, Size, Rotate, Move X and Move Y controls; lettering export uses the same settings as other text.";
+const APP_VERSION = 'v48';
+const WHATS_NEW = "v48: Opt-in Outline width (mm) for Line ornaments. It makes filled Line To Line bands, not doubled outlines. Existing projects stay on their original thin Vector line until you choose a width.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
