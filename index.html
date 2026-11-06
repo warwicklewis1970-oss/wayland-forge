@@ -27,12 +27,13 @@
       <div class="row hph"><button id="homeBack">← Back</button><b class="grow">Projects</b><label class="filebtn">Open file…<input type="file" id="homeLoad" accept=".json,application/json" hidden></label></div>
       <div id="syncBox" class="syncbox"><span id="syncStatus" class="syncst"></span><button id="syncConnect">☁ Connect Google Drive</button><button id="syncNow" hidden>Sync now</button><button id="projDedupe" title="Remove projects that are exact copies">🧹 Remove duplicates</button></div>
       <ul id="projList"></ul>
+      <div class="hint">Drive sync sends your named, saved projects. Last session stays on this device until you open it and Save to Projects.</div>
     </div>
   </div>
 </div>
 <div id="updBar" hidden><span>New version ready <small id="updNews"></small></span><button id="updBtn">Tap to update</button></div>
 <header>
-  <img src="icons/anvil.svg" alt="" class="logo"><button id="homeBtn" title="Home: start screen and projects (your work is kept)" aria-label="Home">⌂</button><button id="helpBtn" title="Help &amp; tutorial (Wayland the blacksmith)" aria-label="Help and tutorial"></button><h1>Wayland Forge</h1><button id="nameBtn" class="namebtn">Untitled ✎</button>
+  <img src="icons/anvil.svg" alt="" class="logo"><button id="homeBtn" title="Home: start screen (your work is kept)" aria-label="Home">⌂</button><button id="projectsBtn" class="projectnav" title="Open your saved projects. Your current design is autosaved first." aria-label="Projects: change project">📂<span class="projectnavtext"> Projects</span></button><button id="helpBtn" title="Help &amp; tutorial (Wayland the blacksmith)" aria-label="Help and tutorial"></button><h1>Wayland Forge</h1><button id="nameBtn" class="namebtn">Untitled ✎</button>
   <div class="spacer"></div>
   <button id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="tl"> Undo</span></button>
   <button id="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷<span class="tl"> Redo</span></button>
@@ -216,13 +217,14 @@
       <div id="lzSteps" class="lzsteps" hidden></div>
     </div></details>
     <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
+      <div class="row"><button id="changeProjectBtn" class="accent wide">📂 Change project / open another…</button></div>
       <div class="row"><button id="saveToProjects" class="grow">Save to Projects</button><button id="saveProj" class="grow">Download file</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
       <div class="helpbox"><b>Help &amp; tutorial</b>
         <div class="row"><button id="helpTour" class="grow">▶ Start the tour</button><button id="helpTopics" class="grow">Pick a topic…</button></div>
         <label class="chk"><input type="checkbox" id="helpIconChk">Show the blacksmith help button in the toolbar</label>
         <label class="chk"><input type="checkbox" id="helpTipsChk">Show tips (a short hint the first time you open each section)</label>
       </div>
-      <div class="hint">Autosaves in this browser; find it again under ⌂ Home › Projects. Fonts: SIL Open Font License.</div>
+      <div class="hint">To open a saved design, tap 📂 Projects above or Change project here. Your current design is saved first. Fonts: SIL Open Font License.</div>
     </div></details>
   </aside>
 </main>

@@ -766,7 +766,7 @@ function listProjs() { const a = readProjs(); let m = {}; try { m = JSON.parse(k
   const last = !m.projId && !m.archived && kvGet(STORE);
   const row = (id, name, t, extra) => `<li data-pid="${id}"><button class="po grow" data-pa="open"><b>${esc(name)}</b><span class="dim">${extra || ''}${ago(t)}</span></button>${id === 'last' ? '' : '<button data-pa="ren" title="Rename" aria-label="Rename">✎</button>'}<button data-pa="del" class="danger" title="Delete" aria-label="Delete">✕</button></li>`;
   const sz = x => JSON.stringify(x).length, tot = a.reduce((t, x) => t + sz(x.state), 0) + (last ? last.length : 0);
-  const html = (last ? row('last', 'Last session', m.t, 'Not saved by name · ' + mb(last.length) + ' · ') : '') + a.map(x => row(x.id, x.name, x.updated, mb(sz(x.state)) + ' · ')).join('') + (a.length || last ? `<li class="hint">Total used: ${mb(tot)}${idb ? '' : ' (old storage, about 5 MB limit)'}</li>` : '');
+  const html = (last ? row('last', 'Last session', m.t, 'Only on this device – not synced · ' + mb(last.length) + ' · ') : '') + a.map(x => row(x.id, x.name, x.updated, mb(sz(x.state)) + ' · ')).join('') + (a.length || last ? `<li class="hint">Total used: ${mb(tot)}${idb ? '' : ' (old storage, about 5 MB limit)'}</li>` : '');
   $('projList').innerHTML = html || '<li class="hint">No saved projects yet. Start a New design and tap <b>Save to Projects</b>.</li>'; }
 $('projList').addEventListener('click', e => { const b = e.target.closest('[data-pa]'); if (!b) return; const id = b.closest('li').dataset.pid, a = readProjs(), x = a.find(q => q.id === id);
   if (b.dataset.pa === 'open') { if (id === 'last') { try { openState(JSON.parse(kvGet(STORE)), null, true); } catch (er) { alert('Could not open the last session.'); } } else if (x) openState(x.state, x.id); }
@@ -782,6 +782,8 @@ $('homeBack').onclick = () => homeView('main');
 $('homeTour').onclick = () => { if (homeOpen && !$('homeTour').dataset.keep) { archiveSession(); const d = defaults(); d.layers[0].text = 'HAPPY BIRTHDAY'; d.layers[1].text = 'MAX'; openState(d, null); } window.dispatchEvent(new Event('wf-tutorial')); };
 $('homeLoad').addEventListener('change', e => { $('loadProj').files = e.target.files; $('loadProj').dispatchEvent(new Event('change')); });
 $('homeBtn').onclick = () => showHome('main');
+// Direct, labelled routes back to saved projects. Autosave runs first; no save/naming dialog blocks navigation.
+$('projectsBtn').onclick = $('changeProjectBtn').onclick = () => { clearTimeout(saveT); saveT = null; showHome('projs'); };
 function toast(t) { let el = $('wfToast'); if (!el) { el = document.createElement('div'); el.id = 'wfToast'; document.body.appendChild(el); } el.textContent = t; el.classList.add('on'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('on'), 2200); }
 // ---------- shape layers ----------
 $('shapeSel').addEventListener('change', e => { sel.shape = e.target.value; sel.letters = []; fixSel(); update(); });
@@ -1407,8 +1409,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v45';
-const WHATS_NEW = "v45: A shorter, clearer tutorial (17 quick steps instead of 24) with a neutral demo badge, HAPPY BIRTHDAY / MAX, when started from Home. Laser files are unchanged.";
+const APP_VERSION = 'v46';
+const WHATS_NEW = "v46: Clear Projects button in the top toolbar and Change project in the Project section. Your current design is autosaved before the project list opens. Laser files are unchanged.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
