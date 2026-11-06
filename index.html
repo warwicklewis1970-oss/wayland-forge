@@ -91,21 +91,27 @@
       </div>
     </div></details>
     <details name="acc" id="sec-text"><summary>Text on this layer</summary><div class="body">
-      <div class="row"><select id="layerSel" class="grow" aria-label="Text layer"></select><button id="addLayer" title="Add text layer">+ Add</button></div>
+      <div class="row"><select id="layerSel" class="grow" aria-label="Text layer"></select><button id="addLayer" title="Add curved text on a shape">+ Curved</button><button id="addFreeLayer" class="accent" title="Add straight text you can place anywhere">+ Free text</button></div>
       <div id="layerFields">
         <label class="full"><span>Text</span><input type="text" data-b="layer.text" maxlength="80"></label>
         <div class="g2">
           <label><span>Font</span><select data-b="layer.font" id="fontSel"></select></label>
           <label><span>Colour</span><input type="color" data-b="layer.color" class="col"></label>
           <label><span>Letters</span><select data-b="layer.style"><option value="fill">Fill (solid)</option><option value="hollow">Hollow (outline)</option></select></label>
-          <label><span>Side</span><select data-b="layer.side"><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
-          <label><span>Sits</span><select data-b="layer.ring"><option value="between">Between lines</option><option value="outer">Outside outer</option><option value="inner">Inside inner</option></select></label>
+          <label id="freeSideRow"><span>Side</span><select data-b="layer.side"><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+          <label id="freeRingRow"><span>Sits</span><select data-b="layer.ring"><option value="between">Between lines</option><option value="outer">Outside outer</option><option value="inner">Inside inner</option></select></label>
         </div>
         <label class="rg"><span>Size</span><input type="range" min="16" max="200" step="1" data-b="layer.size"><output></output></label>
-        <label class="rg"><span>Rotate</span><input type="range" min="-180" max="180" step="1" data-b="layer.offset"><output></output></label>
+        <label class="rg" id="layerRotateRow"><span>Rotate</span><input type="range" min="-180" max="180" step="1" data-b="layer.offset"><output></output></label>
         <label class="rg"><span>Spacing</span><input type="range" min="-20" max="80" step="1" data-b="layer.spacing"><output></output></label>
-        <label class="rg"><span>Lift</span><input type="range" min="-80" max="80" step="1" data-b="layer.lift"><output></output></label>
-        <div class="row"><button id="dupOpp" class="grow">Duplicate to opposite side</button><button id="delLayer" class="danger">Delete</button></div>
+        <label class="rg" id="freeRotateRow" hidden><span>Rotate</span><input type="range" min="-180" max="180" step="1" data-b="layer.rot"><output></output></label>
+        <label class="rg" id="layerLiftRow"><span>Lift</span><input type="range" min="-80" max="80" step="1" data-b="layer.lift"><output></output></label>
+        <div id="freeTextControls" hidden>
+          <div class="hint">Straight text: not attached to a shape. Drag its letters to move it.</div>
+          <label class="rg"><span>Move X</span><input type="range" min="0" max="1000" step="1" data-b="layer.x"><output></output></label>
+          <label class="rg"><span>Move Y</span><input type="range" min="0" max="1000" step="1" data-b="layer.y"><output></output></label>
+        </div>
+        <div class="row"><button id="dupOpp" class="grow">Duplicate to opposite side</button><button id="centreFree" class="grow" hidden>Centre text</button><button id="delLayer" class="danger">Delete</button></div>
       </div>
     </div></details>
     <details name="acc" id="sec-img"><summary>🖼 Image layers</summary><div class="body">

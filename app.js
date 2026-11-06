@@ -208,7 +208,19 @@ function shapeEl(d, attrs) {
   return `<ellipse cx="${C}" cy="${C}" rx="${f2(rx)}" ry="${f2(ry)}" ${attrs}/>`;
 }
 // Lay a text layer's glyph outlines along the ring.
-function layoutLayer(Ly) { return withShape(shapeOf(Ly), () => layoutLayer0(Ly)); }
+function layoutLayer(Ly) { if (Ly.free) return layoutFree(Ly); return withShape(shapeOf(Ly), () => layoutLayer0(Ly)); }
+// Straight text has its own centre/rotation and does not inherit a shape's transform.
+function layoutFree(Ly) {
+  const f = fonts[Ly.font]; if (!f || !Ly.text) return [];
+  const gl = f.stringToGlyphs(Ly.text), sc = Ly.size / f.unitsPerEm, x0 = typeof Ly.x === 'number' ? Ly.x : C, y0 = typeof Ly.y === 'number' ? Ly.y : C;
+  const adv = gl.map((g, i) => g.advanceWidth * sc + (i < gl.length - 1 ? Ly.spacing + f.getKerningValue(g, gl[i + 1]) * sc : 0));
+  let cur = -adv.reduce((a, c) => a + c, 0) / 2;
+  return gl.map((g, i) => { const w = g.advanceWidth * sc, a = Ly.letters[i] || {}, x = cur + w / 2, bb = g.getPath(-w / 2, 0, Ly.size).getBoundingBox(); cur += adv[i];
+    const gp = g.getPath(-w / 2, 0, Ly.size);
+    return { i, w, x: (x0 + x), y: y0, ang: 0, d: gp.toPathData(2), bb: bb.x2 > bb.x1 ? bb : null,
+      tr: `translate(${f2(x0 + x + (a.dx || 0))} ${f2(y0 + (a.dy || 0))}) rotate(${f2((Ly.rot || 0) + (a.rot || 0))}) scale(${a.scale || 1})` };
+  });
+}
 function layoutLayer0(Ly) {
   const f = fonts[Ly.font]; if (!f || !Ly.text) return [];
   const sc = Ly.size / f.unitsPerEm, cap = ((f.tables.os2 && f.tables.os2.sCapHeight) || f.unitsPerEm * 0.7) * sc;
@@ -529,6 +541,10 @@ function syncUI() {
   $('shapeUp').disabled = curShape() === S.shapes[S.shapes.length - 1]; $('shapeDown').disabled = curShape() === S.shapes[0];
   $('layerSel').innerHTML = S.layers.filter(l => shapeOf(l) === curShape()).map(l => `<option value="${l.id}"${l.id === sel.layer ? ' selected' : ''}>${esc(l.text || '(empty)')} · ${l.side}</option>`).join('');
   $('layerFields').hidden = !curLayer();
+  const free = !!(curLayer() && curLayer().free);
+  $('freeSideRow').hidden = free; $('freeRingRow').hidden = free; $('layerLiftRow').hidden = free; $('dupOpp').hidden = free;
+  $('layerRotateRow').hidden = free; $('freeRotateRow').hidden = !free;
+  $('freeTextControls').hidden = !free; $('centreFree').hidden = !free; $('layerRotateRow').title = free ? 'Rotate the whole line of text' : 'Move curved text around its path';
   const n = sel.letters.length;
   $('letterBox').hidden = !n; $('letterNone').hidden = !!n;
   if (n) {
@@ -562,7 +578,7 @@ function target(scope) {
 }
 const ORN_LABEL = { star: 'Star', dot: 'Dot', holly1: 'Holly', holly2: 'Holly', note: 'Note', notes: 'Notes' };
 function railLabel(kind, obj) {
-  if (kind === 'text') { const t = (obj.text || '').trim(); return 'T ' + (t ? t.slice(0, 16) : '(empty)'); }
+  if (kind === 'text') { const t = (obj.text || '').trim(); return (obj.free ? '↔ ' : 'T ') + (t ? t.slice(0, 16) : '(empty)'); }
   if (kind === 'orn') return ORN_LABEL[obj.type] || 'Ornament';
   if (kind === 'img') return (obj.name || 'Image').slice(0, 16);
   if (kind === 'shape') return (obj.name || obj.base.shape).slice(0, 16);
@@ -675,7 +691,7 @@ document.querySelectorAll('[data-b]').forEach(el => {
     if (scope === 'layer' && key === 'text') fixSel();
     if (scope === 'orn' && key === 'style') { const pr = partnerOf(o); if (pr) pr.style = o.style; }
     const out = el.nextElementSibling; if (out && out.tagName === 'OUTPUT') out.textContent = o[key];
-    render(); if (scope === 'base' || scope === 'img') syncUI();
+    render(); if (scope === 'layer') renderLayerRail(); if (scope === 'base' || scope === 'img') syncUI();
     if (el.tagName === 'SELECT' || el.type === 'checkbox') { syncUI(); commit(); }
   });
   el.addEventListener('change', commit);
@@ -685,7 +701,11 @@ $('fontSel').addEventListener('change', () => { const L = curLayer(); if (L && S
 $('layerSel').addEventListener('change', e => { sel.layer = e.target.value; update(); });
 const act = (id, fn) => $(id).addEventListener('click', () => { fn(); fixSel(); update(); commit(); });
 act('addLayer', () => { const L = newLayer('NEW TEXT', 'top'); L.ring = 'outer'; L.shape = curShape().id; S.layers.push(L); sel.layer = L.id; });
+act('addFreeLayer', () => { const L = newLayer('Your text', 'top'); L.free = true; L.x = C; L.y = C; L.rot = 0; L.size = 70; L.shape = curShape().id;
+  S.layers.push(L); sel.layer = L.id; sel.letters = []; sel.orn = null; sel.img = false; openSec('sec-text');
+  setTimeout(() => { const el = document.querySelector('[data-b="layer.text"]'); if (el) { el.focus(); el.select(); } }, 0); });
 act('delLayer', () => { S.layers = S.layers.filter(l => l.id !== sel.layer); });
+act('centreFree', () => { const L = curLayer(); if (L && L.free) { L.x = C; L.y = C; L.rot = 0; } });
 act('dupOpp', () => { const L = curLayer(); if (!L) return; const c = JSON.parse(JSON.stringify(L)); c.id = uid(); c.side = L.side === 'top' ? 'bottom' : 'top'; c.offset = -L.offset; S.layers.push(c); sel.layer = c.id; });
 act('resetLetter', () => { for (const s of sel.letters) { const L = S.layers.find(x => x.id === s.l); if (L) delete L.letters[s.i]; } });
 act('resetLetters', () => { const L = curLayer(); if (L) L.letters = {}; });
@@ -848,8 +868,8 @@ document.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; 
 // ---------- pointer: select, drag, pan, zoom ----------
 function svgPt(e) { const p = stage.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(stage.getScreenCTM().inverse()); }
 let drag = null, spaceDown = false;
-function nudge(x, y, step) { // x,y are screen directions: map them into the letter's layer (undo layer turn and scale)
-  const L = S.layers.find(q => sel.letters[0] && q.id === sel.letters[0].l), sh = L ? shapeOf(L) : null; let ux = x * step, uy = y * step;
+function nudge(x, y, step) { // screen directions: free lines counter-rotate; curved lines undo shape turn and scale
+  const L = S.layers.find(q => sel.letters[0] && q.id === sel.letters[0].l), sh = L && L.free ? { rot: L.rot || 0, scale: 1 } : L ? shapeOf(L) : null; let ux = x * step, uy = y * step;
   if (sh) { const a = -(sh.rot || 0) * Math.PI / 180, k = sh.scale || 1; [ux, uy] = [(ux * Math.cos(a) - uy * Math.sin(a)) / k, (ux * Math.sin(a) + uy * Math.cos(a)) / k]; }
   for (const o of selObjs()) { o.dx = f2(o.dx + ux); o.dy = f2(o.dy + uy); } update(); commit(); }
 document.querySelectorAll('[data-nudge]').forEach(b => b.addEventListener('click', () => { const [x, y] = b.dataset.nudge.split(',').map(Number); nudge(x, y, 2); }));
@@ -883,7 +903,7 @@ $('dragMode').onclick = () => { mode.pan = !mode.pan; syncUI(); };
 $('clearSel').onclick = () => { sel.letters = []; update(); };
 act('selAll', () => { const L = curLayer(); if (!L) return; const add = layoutLayer(L).filter(q => q.bb && !isSel(L.id, q.i)).map(q => ({ l: L.id, i: q.i })); sel.letters = sel.letters.concat(add); openSec('sec-letter'); });
 const additive = e => e.shiftKey || e.ctrlKey || e.metaKey || mode.multi;
-function startLetterDrag(p) { const L = S.layers.find(x => sel.letters[0] && x.id === sel.letters[0].l); drag = { letters: selObjs().map(o => ({ o, x0: o.dx, y0: o.dy })), p, sh: L ? shapeOf(L) : null }; }
+function startLetterDrag(p) { const L = S.layers.find(x => sel.letters[0] && x.id === sel.letters[0].l); drag = { letters: selObjs().map(o => ({ o, x0: o.dx, y0: o.dy })), p, sh: L ? (L.free ? { rot: L.rot || 0, scale: 1 } : shapeOf(L)) : null }; }
 stage.addEventListener('pointerdown', e => {
   if (drag) return; // second finger etc.
   const t = e.target.closest('[data-k]'), k = t && t.dataset.k, p = svgPt(e);
@@ -1049,12 +1069,13 @@ function laserItems() {
     if (b.outer) it.push({ key: pre + 'outer', part: 'outer', sh, name: nm + 'Outer line', def: i ? 'etch' : 'cutout' });
     if (b.inner) it.push({ key: pre + 'inner', part: 'inner', sh, name: nm + 'Inner line', def: 'etch' });
     if (b.fillOn) it.push({ key: pre + 'fill', part: 'fill', sh, name: nm + 'Shape fill', def: 'off' });
-    for (const L of S.layers) if (L.text && shapeOf(L) === sh) it.push({ key: 't:' + L.id, sh, name: nm + 'Text: ' + L.text, def: 'etch' }); });
+    for (const L of S.layers) if (L.text && !L.free && shapeOf(L) === sh) it.push({ key: 't:' + L.id, sh, name: nm + 'Text: ' + L.text, def: 'etch' }); });
   if (S.ornaments.length) { const nl = S.ornaments.filter(o => o.style === 'line').length, nf = S.ornaments.length - nl;
     it.push({ key: 'orn', name: 'Ornaments' + (!nl ? ' (fill)' : !nf ? ' (line)' : ` (${nf} fill, ${nl} line)`), def: 'etch' }); }
   if (S.hole && S.hole.on) it.push({ key: 'hole', name: `Hanging hole (${S.hole.d} mm)`, def: 'cutin' });
   S.images.filter(im => im.src && im.visible !== false).forEach(im => it.push({ key: 'img:' + im.id, im, name: (im.name || 'Image') + (im.mode === 'trace' ? ' (trace)' : im.mode === 'sil' ? ' (silhouette)' : ''), def: im.mode === 'orig' ? 'image' : 'etch' }));
   const z = x => x.im ? (x.im.behind ? 0 : 2) : x.part === 'fill' && !x.sh.base.fillAbove ? 1 : x.part === 'fill' ? 3 : 4; // same stacking as the design
+  for (const L of S.layers) if (L.free && L.text) it.push({ key: 't:' + L.id, name: 'Free text: ' + L.text, def: 'etch' });
   return it.map((x, i) => [x, i]).sort((p, q) => z(p[0]) - z(q[0]) || p[1] - q[1]).map(p => p[0]);
 }
 const roleOf = it => S.laser[it.key] || it.def;
@@ -1409,8 +1430,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v46';
-const WHATS_NEW = "v46: Clear Projects button in the top toolbar and Change project in the Project section. Your current design is autosaved before the project list opens. Laser files are unchanged.";
+const APP_VERSION = 'v47';
+const WHATS_NEW = "v47: Add Free text for a straight line anywhere in your design. Use its Text, Font, Size, Rotate, Move X and Move Y controls; lettering export uses the same settings as other text.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1569,7 +1590,7 @@ $('projDedupe') && ($('projDedupe').onclick = async () => { const { out, gone } 
 window.WF_SYNC = { now: syncNow, meta: sm, get state() { return sy.state; }, set big(v) { sy.big = v; }, forget() { tokForget(); }, dedupe: dedupeProjs };
 
 // ---------- boot ----------
-window.WF = { loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
+window.WF = { loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
 (async () => {
   await kvLoad(); migrateProjs();
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
