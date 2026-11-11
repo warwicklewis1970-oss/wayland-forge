@@ -169,13 +169,14 @@ function filletD(g) {
 let geoCache = { key: '', G: null };
 function baseGeo() { const key = JSON.stringify(SB()); if (geoCache.key !== key) geoCache = { key, G: shapeVerts() }; return geoCache.G; }
 function maxInnerGap() { if (!FILLET.includes(SB().shape)) return Infinity; return -safeOffset(baseGeo(), -2000, 0).d; }
-function ringPts(d, text) {
+function ringPtsRaw(d, text) {
   const b = SB();
   if (FILLET.includes(b.shape)) return filletPts(safeOffset(baseGeo(), d, text ? b.smooth : 0).g);
   const rx = b.rx + d, ry = (b.shape === 'circle' ? b.rx : b.ry) + d, pts = [];
   for (let i = 0; i < 1440; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 1440; pts.push([C + rx * Math.cos(a), C + ry * Math.sin(a)]); }
   return pts;
 }
+function ringPts(d, text) { const pts = ringPtsRaw(d, text), pl = trimPlane(null, d); return pl ? clipPoly(pts, pl) : pts; }
 // Arc-length walker. Starts where the closed (clockwise) path crosses the vertical centre line —
 // at the top for top text (runs clockwise), at the bottom for bottom text (runs anticlockwise).
 function walker(pts, side) {
@@ -200,8 +201,37 @@ function walker(pts, side) {
     return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t };
   } };
 }
+function trimOf(sh) { sh = sh || CUR; return sh && sh.trimOn ? { ang: +sh.trimAng || 0, pos: Math.max(-90, Math.min(90, +sh.trimPos || 0)), keep: +sh.trimKeep === -1 ? -1 : 1 } : null; }
+// Plane for a line offset d from the outline: outward lines (d >= 0, incl. the outside cut) stop exactly on the trim line; inward lines (inner ring, text, inner clip) run parallel to it, |d| inside, like they do along the curve.
+function trimPlane(sh, d) { const t = trimOf(sh); if (!t) return null; sh = sh || CUR; const ins = Math.max(0, -(+d || 0)); const b = sh.base, a = t.ang * Math.PI / 180, tx = Math.cos(a), ty = Math.sin(a), nx = ty, ny = -tx;
+  const ext = Math.max(b.rx, b.shape === 'circle' ? b.rx : (b.ry || b.rx)), off = t.pos / 100 * ext;
+  return { nx: t.keep * nx, ny: t.keep * ny, c: t.keep * (nx * C + ny * C + off) + ins }; }
+function clipPoly(pts, pl) { if (!pl || !pts || pts.length < 3) return pts || [];
+  const inside = p => pl.nx * p[0] + pl.ny * p[1] >= pl.c - 1e-7;
+  const hit = (a, b) => { const da = pl.nx * a[0] + pl.ny * a[1] - pl.c, db = pl.nx * b[0] + pl.ny * b[1] - pl.c, u = da / ((da - db) || 1e-12); return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]; };
+  const out = [];
+  for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length], ia = inside(a), ib = inside(b);
+    if (ia && ib) out.push(b); else if (ia && !ib) out.push(hit(a, b)); else if (!ia && ib) { out.push(hit(a, b)); out.push(b); } }
+  return out; }
+function ptsD(pts) { return pts && pts.length >= 3 ? 'M' + pts.map(q => f2(q[0]) + ' ' + f2(q[1])).join('L') + 'Z' : ''; }
+function clipTas(d, pl) { const td = tasD(d); if (!td || !pl) return td || '';
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'); svg.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden'; svg.innerHTML = `<path d="${td}"/>`; document.body.appendChild(svg);
+  const el = svg.firstElementChild, L = el && el.getTotalLength(), P = []; if (el && L > 0) for (let i = 0; i < 180; i++) { const q = el.getPointAtLength(L * i / 180); P.push([q.x, q.y]); }
+  svg.remove(); return ptsD(clipPoly(P, pl)); }
+function trimGuideEl() { const t = trimOf(), pl = trimPlane(); if (!t || !pl) return '';
+  const tx = -pl.ny, ty = pl.nx, x0 = pl.nx * pl.c, y0 = pl.ny * pl.c, span = 1400;
+  return `<path d="M${f2(x0 - tx * span)} ${f2(y0 - ty * span)}L${f2(x0 + tx * span)} ${f2(y0 + ty * span)}" fill="none" stroke="#2a7de1" stroke-width="2" stroke-dasharray="8 6" vector-effect="non-scaling-stroke" pointer-events="none"/>`; }
+function ptInTrimmed(sh, x, y) { return withShape(sh, () => { const pl = trimPlane(sh), k = sh.scale || 1, a = -(sh.rot || 0) * Math.PI / 180, u = x - C - (sh.x || 0), v = y - C - (sh.y || 0), local = [C + (u * Math.cos(a) - v * Math.sin(a)) / k, C + (u * Math.sin(a) + v * Math.cos(a)) / k];
+  if (pl && pl.nx * local[0] + pl.ny * local[1] < pl.c - 1e-6) return false; const pts = ringPts(0, false); if (!pts.length) return true;
+  let ins = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const pa = pts[j], pb = pts[i]; if ((pa[1] > local[1]) !== (pb[1] > local[1]) && local[0] < pa[0] + (local[1] - pa[1]) * (pb[0] - pa[0]) / ((pb[1] - pa[1]) || 1e-9)) ins = !ins; } return ins; }); }
+function trimWarnText() { const sh = curShape(); if (!sh || !sh.trimOn) return '';
+  const bits = []; if (S.hole && S.hole.on && !ptInTrimmed(sh, S.hole.x, S.hole.y)) bits.push('The hanging hole is outside the trimmed shape — it is not removed, but it will not sit on the piece unless you move it or snap it.');
+  const n = S.ornaments.filter(o => !ptInTrimmed(sh, o.x, o.y)).length; if (n) bits.push(n + ' ornament' + (n > 1 ? 's sit' : ' sits') + ' outside the trimmed shape (not clipped automatically).');
+  const ft = S.layers.filter(l => l.free && l.text && !ptInTrimmed(sh, typeof l.x === 'number' ? l.x : C, typeof l.y === 'number' ? l.y : C)).length; if (ft) bits.push('Free text sits outside the trimmed shape (not clipped automatically).');
+  return bits.join(' '); }
 function shapeEl(d, attrs) {
-  const b = SB();
+  const b = SB(), pl = trimPlane(null, d);
+  if (pl) { const pts = clipPoly(ringPtsRaw(d, false), pl), extra = clipTas(d, pl); return pts.length >= 3 ? `<path d="${ptsD(pts)}${extra}" ${attrs}/>` : (extra ? `<path d="${extra}" ${attrs}/>` : ''); }
   if (FILLET.includes(b.shape)) { const r = safeOffset(baseGeo(), d, 0); return `<path d="${filletD(r.g)}${tasD(d)}" ${attrs}/>`; }
   const rx = b.rx + d, ry = (b.shape === 'circle' ? b.rx : b.ry) + d;
   if (rx <= 0 || ry <= 0) return '';
@@ -425,6 +455,7 @@ function buildArt(editor) {
       const hs = `fill="none" stroke="transparent" stroke-width="${Math.max(26, b.width + 16)}" pointer-events="stroke" data-k="sh" data-id="${sh.id}"`;
       part.push(shapeEl(0, hs)); if (b.inner) part.push(shapeEl(-b.gap, hs));
       if (S.shapes.length > 1 && sh === curShape()) part.push(shapeEl(0, 'fill="none" stroke="#e0a043" stroke-width="2" stroke-dasharray="10 7" vector-effect="non-scaling-stroke" pointer-events="none"'));
+      if (sh.trimOn && sh === curShape()) part.push(trimGuideEl());
     }
     for (const L of S.layers) if (shapeOf(L) === sh) part.push(textEl(L, editor));
     out.push(wrapSh(sh, part.join('')));
@@ -484,7 +515,7 @@ let view = { x: -40, y: -40, w: 1080, h: 1080 };
 // ---- ornament movement: linked mirror pairs + follow-a-path ----
 const pathCache = new Map();
 function pathSamples(shId, which) { // closed polyline of the chosen line, clockwise from the top, in art coords
-  const sh = S.shapes.find(x => x.id === shId) || S.shapes[0]; const key = JSON.stringify([sh.x, sh.y, sh.scale, sh.rot, sh.base, which]);
+  const sh = S.shapes.find(x => x.id === shId) || S.shapes[0]; const key = JSON.stringify([sh.x, sh.y, sh.scale, sh.rot, sh.base, which, !!sh.trimOn, sh.trimAng, sh.trimPos, sh.trimKeep]);
   if (pathCache.has(key)) return pathCache.get(key);
   const gap = sh.base.gap, off = which === 'inner' ? -gap : which === 'mid' ? -gap / 2 : 0;
   const el = withShape(sh, () => shapeEl(off, ''));
@@ -531,9 +562,16 @@ function syncUI() {
   });
   if ($('holeOn')) { const h = S.hole; $('holeOn').checked = h.on; if (document.activeElement !== $('holeD')) $('holeD').value = h.d; $('holeD').disabled = $('holeSnap').disabled = false;
     const c = holeCheck(), i = $('holeInfo'); i.hidden = !h.on; i.classList.toggle('holewarn', !!(c && c.warn));
-    i.textContent = !h.on ? '' : !c ? 'Drag the blue circle to place it.' : c.warn ? (c.inside ? `Too close to the edge: only ${Math.max(0, c.mm).toFixed(1)} mm of wood left (needs at least 2 mm). Drag it in or tap Snap to top.` : 'The hole is outside the outer cut. Drag it in or tap Snap to top.') : `Drag the circle to move it. ${c.mm.toFixed(1)} mm of wood to the edge at ${f2(Math.min(+$('lzW').value, +$('lzH').value))} mm size. Laser: cut in the Cut inside step, before the outside cut.`; }
+    let ht = !h.on ? '' : !c ? 'Drag the blue circle to place it.' : c.warn ? (c.inside ? `Too close to the edge: only ${Math.max(0, c.mm).toFixed(1)} mm of wood left (needs at least 2 mm). Drag it in or tap Snap to top.` : 'The hole is outside the outer cut. Drag it in or tap Snap to top.') : `Drag the circle to move it. ${c.mm.toFixed(1)} mm of wood to the edge at ${f2(Math.min(+$('lzW').value, +$('lzH').value))} mm size. Laser: cut in the Cut inside step, before the outside cut.`;
+    if (h.on && curShape() && curShape().trimOn && !ptInTrimmed(curShape(), h.x, h.y)) { ht = 'The hanging hole is outside the trimmed shape. It has not been deleted — drag it onto the kept side or tap Snap to top.'; i.classList.add('holewarn'); }
+    i.textContent = ht; }
   const sh = SB().shape;
   document.querySelectorAll('[data-shapes]').forEach(e => e.hidden = !e.dataset.shapes.split(' ').includes(sh));
+  const trOn = !!(curShape() && curShape().trimOn); if ($('trimFields')) $('trimFields').hidden = !trOn; if ($('trimOn')) $('trimOn').checked = trOn;
+  if (trOn && curShape()) { const o = curShape(); if (document.activeElement !== $('trimAng')) $('trimAng').value = +o.trimAng || 0; if (document.activeElement !== $('trimPos')) $('trimPos').value = +o.trimPos || 0; $('trimAngOut') && ($('trimAngOut').textContent = (+o.trimAng || 0) + '°');
+    const mm = Math.abs(+o.trimPos || 0) / 100 * o.base.rx * (o.scale || 1) * mmPerArt(); $('trimPosOut') && ($('trimPosOut').textContent = (+o.trimPos || 0) + '%'); if ($('trimPosHint')) $('trimPosHint').textContent = (+o.trimPos || 0) === 0 ? 'Through the centre (a half-circle on a circle). About 0 mm from centre at your laser page size.' : (o.trimPos + '% of the radius — about ' + f2(mm) + ' mm from centre at your laser page size.');
+    if ($('trimKeep')) $('trimKeep').value = +o.trimKeep === -1 ? '-1' : '1'; }
+  if ($('trimWarn')) { const w = trimWarnText(); $('trimWarn').hidden = !w; $('trimWarn').textContent = w; $('trimWarn').classList.toggle('holewarn', !!w); }
   const mg = maxInnerGap(); $('gapWarn').hidden = !(SB().gap > mg); $('gapWarn').textContent = `Ring gap limited to ${Math.floor(mg)} for this shape so the inner line can't fold over itself.`;
   const order = S.shapes.slice().reverse();
   $('shapeSel').innerHTML = order.map(s => `<option value="${s.id}"${s === curShape() ? ' selected' : ''}>${s.visible === false ? '🚫 ' : ''}${esc(s.name)} · ${s.base.shape}</option>`).join('');
@@ -691,6 +729,7 @@ document.querySelectorAll('[data-b]').forEach(el => {
     o[key] = el.type === 'checkbox' ? el.checked : (el.type === 'range' || el.type === 'number') ? parseFloat(el.value) : el.value;
     if (scope === 'layer' && key === 'text') fixSel();
     if (scope === 'orn' && key === 'style') { const pr = partnerOf(o); if (pr) pr.style = o.style; }
+    if (scope === 'shape' && key === 'trimOn' && o.trimOn) { if (o.trimAng == null) o.trimAng = 0; if (o.trimPos == null) o.trimPos = 0; if (o.trimKeep == null) o.trimKeep = 1; }
     const out = el.nextElementSibling; if (out && out.tagName === 'OUTPUT') out.textContent = o[key];
     render(); if (scope === 'layer') renderLayerRail(); if (scope === 'base' || scope === 'img') syncUI();
     if (el.tagName === 'SELECT' || el.type === 'checkbox') { syncUI(); commit(); }
@@ -814,7 +853,9 @@ function toast(t) { let el = $('wfToast'); if (!el) { el = document.createElemen
 // ---------- shape layers ----------
 $('shapeSel').addEventListener('change', e => { sel.shape = e.target.value; sel.letters = []; fixSel(); update(); });
 $('addShape').addEventListener('change', e => { const t = e.target.value; e.target.value = ''; if (!t) return;
-  const sh = newShape('Layer ' + (S.shapes.length + 1), { shape: t, rx: 200, ry: t === 'circle' ? 200 : 160, gap: 70, width: 6 });
+  const half = t === 'halfcircle', kind = half ? 'circle' : t;
+  const sh = newShape('Layer ' + (S.shapes.length + 1), { shape: kind, rx: 200, ry: kind === 'circle' ? 200 : 160, gap: 70, width: 6 });
+  if (half) { sh.trimOn = true; sh.trimAng = 0; sh.trimPos = 0; sh.trimKeep = 1; sh.name = 'Half circle'; }
   S.shapes.push(sh); const L = newLayer('NEW TEXT', 'top'); L.size = 40; L.spacing = 2; L.shape = sh.id; S.layers.push(L);
   sel.shape = sh.id; sel.layer = L.id; sel.letters = []; fixSel(); update(); commit(); openSec('sec-shape'); });
 act('shapeDup', () => { const o = curShape(), c = JSON.parse(JSON.stringify(o)); c.id = uid(); c.name = o.name + ' copy'; c.x = o.x + 40; c.y = o.y + 40;
@@ -828,6 +869,17 @@ act('shapeVis', () => { const o = curShape(); o.visible = o.visible === false; }
 const moveShape = d => { const a = S.shapes, i = a.indexOf(curShape()), j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; };
 act('shapeUp', () => moveShape(1)); act('shapeDown', () => moveShape(-1));
 act('shapeCentre', () => { const o = curShape(); o.x = 0; o.y = 0; });
+function applyTrimPreset(kind) { const o = curShape(); if (!o) return; o.trimOn = true;
+  if (kind === 'bottom') { o.trimAng = 0; o.trimKeep = 1; } else if (kind === 'top') { o.trimAng = 0; o.trimKeep = -1; } else if (kind === 'left') { o.trimAng = 90; o.trimKeep = 1; } else if (kind === 'right') { o.trimAng = 90; o.trimKeep = -1; }
+  if (o.trimPos == null) o.trimPos = 0; update(); commit(); }
+document.querySelectorAll('[data-trim]').forEach(b => b.addEventListener('click', () => applyTrimPreset(b.dataset.trim)));
+$('trimOn') && $('trimOn').addEventListener('change', () => { const o = curShape(); if (!o) return; o.trimOn = $('trimOn').checked; if (o.trimOn) { if (o.trimAng == null) o.trimAng = 0; if (o.trimPos == null) o.trimPos = 0; if (o.trimKeep == null) o.trimKeep = 1; } update(); commit(); });
+$('trimAng') && $('trimAng').addEventListener('input', () => { const o = curShape(); if (!o || !o.trimOn) return; o.trimAng = +$('trimAng').value; update(); });
+$('trimAng') && $('trimAng').addEventListener('change', () => commit());
+$('trimPos') && $('trimPos').addEventListener('input', () => { const o = curShape(); if (!o || !o.trimOn) return; o.trimPos = +$('trimPos').value; update(); });
+$('trimPos') && $('trimPos').addEventListener('change', () => commit());
+$('trimKeep') && $('trimKeep').addEventListener('change', () => { const o = curShape(); if (!o) return; o.trimKeep = +$('trimKeep').value === -1 ? -1 : 1; update(); commit(); });
+$('trimFlip') && ($('trimFlip').onclick = () => { const o = curShape(); if (!o) return; o.trimOn = true; o.trimKeep = +o.trimKeep === -1 ? 1 : -1; update(); commit(); });
 $('swatches').addEventListener('click', e => {
   const c = e.target.dataset && e.target.dataset.c; if (!c) return;
   if (curOrn()) curOrn().color = c; else if (curLayer()) curLayer().color = c; else SB().stroke = c;
@@ -1086,7 +1138,8 @@ function laserItems() {
 }
 const roleOf = it => S.laser[it.key] || it.def;
 function ringD(d) {
-  const b = SB();
+  const b = SB(), pl = trimPlane(null, d);
+  if (pl) { const pts = clipPoly(ringPtsRaw(d, false), pl); return ptsD(pts) + clipTas(d, pl); }
   if (FILLET.includes(b.shape)) return filletD(safeOffset(baseGeo(), d, 0).g) + tasD(d);
   const rx = b.rx + d, ry = (b.shape === 'circle' ? b.rx : b.ry) + d; if (rx <= 0.5 || ry <= 0.5) return '';
   return `M${f2(C - rx)} ${C}A${f2(rx)} ${f2(ry)} 0 1 0 ${f2(C + rx)} ${C}A${f2(rx)} ${f2(ry)} 0 1 0 ${f2(C - rx)} ${C}Z`;
@@ -1312,8 +1365,9 @@ async function laserSteps() { await imgReady();
     else st.push({ kind: 'CUT', job, what: label, type: 'svg', items: list, mode: 'Vector (SVG) - LaserGRBL takes the size from the file', warn,
       data: async () => lzVec(W, H, list.map(it => laserPart(it, kind)).join('') + mk(''), 'cut ' + label) }); };
   const hc = cin.some(x => x.key === 'hole') ? holeCheck() : null;
-  if (cin.length) cut(cin, 'cutin', 'inside', (hc && hc.warn ? `WARNING: the hanging hole has only ${Math.max(0, hc.mm).toFixed(1)} mm of wood to the edge (under 2 mm) - it may break out. ` : '') + 'Cutting. Passes are built into the .nc file.' + (hc ? ' Includes the hanging hole. Runs before the outside cut so the piece stays put.' : ''));
-  if (cout.length) cut(cout, 'cutout', 'outside', 'Always LAST - the piece is free after this.');
+  const trimCut = list => list.some(it => it.sh && it.sh.trimOn) ? ' NEW: this outline includes a straight trim edge as part of one closed path (not an extra open cut). Frame it before burning.' : '';
+  if (cin.length) cut(cin, 'cutin', 'inside', (hc && hc.warn ? `WARNING: the hanging hole has only ${Math.max(0, hc.mm).toFixed(1)} mm of wood to the edge (under 2 mm) - it may break out. ` : '') + 'Cutting. Passes are built into the .nc file.' + (hc ? ' Includes the hanging hole. Runs before the outside cut so the piece stays put.' : '') + (S.hole && S.hole.on && S.shapes.some(sh => sh.trimOn && !ptInTrimmed(sh, S.hole.x, S.hole.y)) ? ' WARNING: the hanging hole is outside the trimmed shape — it was not deleted.' : '') + trimCut(cin));
+  if (cout.length) cut(cout, 'cutout', 'outside', 'Always LAST - the piece is free after this.' + trimCut(cout));
   st.forEach((s, i) => { s.n = i + 1; s.W = W; s.H = H; s.dpi = s.dpi || dpi; s.px = s.type === 'png' ? [Math.round(W / 25.4 * s.dpi), Math.round(H / 25.4 * s.dpi)] : null;
     s.short = s.short || (s.kind === 'ENGRAVE' ? 'photo' : 'cut ' + s.what); s.b = bz(s.job); if (s.type !== 'nc') s.short += ' ' + lzTagOf(s.job, s.b); s.file = `${B} ${s.n} ${s.short}.${s.type}`; });
   return st;
@@ -1443,8 +1497,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v48';
-const WHATS_NEW = "v48: Opt-in Outline width (mm) for Line ornaments. It makes filled Line To Line bands, not doubled outlines. Existing projects stay on their original thin Vector line until you choose a width.";
+const APP_VERSION = 'v49';
+const WHATS_NEW = "v49: Trim any shape with a straight line (or add a Half circle). Choose the cut angle, how far across the shape it sits, and which side to keep. The cut-off edge becomes part of the closed outside cut. Existing designs are unchanged until you turn trim on.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };

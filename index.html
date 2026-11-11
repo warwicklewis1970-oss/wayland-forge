@@ -60,7 +60,7 @@
     <div id="layerBar">
       <div class="row"><b class="lbt">Layers</b><select id="shapeSel" class="grow" aria-label="Active layer (top of list = in front)"></select><button id="shapeVis" class="mini2" title="Show or hide this layer">Hide</button></div>
       <div id="addPicMenu" class="picmenu" hidden><b>Add which kind of image layer?</b><button data-addpic="1">🐶 Picture in the design<small>sits inside your shape (logo, pet, photo)</small></button><button data-addpic="2">🗺 Background / map<small>sits behind everything</small></button><button data-addpic="0" class="mini">Cancel</button></div>
-      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add layer</option><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia (detailed)</option><option value="auss">Australia (smooth, for text)</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
+      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add layer</option><option value="circle">Circle</option><option value="halfcircle">Half circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia (detailed)</option><option value="auss">Australia (smooth, for text)</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
       <div class="row"><button id="addPicBtn" class="accent addpic grow" title="Add an image layer (picture, logo or map)">🖼 + Add image layer</button></div>
     </div>
     <details name="acc" id="sec-shape"><summary>Shape &amp; position</summary><div class="body">
@@ -88,6 +88,16 @@
         <label><span>Line</span><input type="color" data-b="base.stroke" class="col"></label>
         <label class="chk"><input type="checkbox" data-b="base.fillOn">Fill <input type="color" data-b="base.fill" class="col"></label>
         <label class="chk"><input type="checkbox" data-b="base.fillAbove">Fill on top of picture <span class="dim">(e.g. a band behind your text)</span></label>
+      </div>
+      <label class="chk"><input type="checkbox" id="trimOn">Trim with straight line</label>
+      <div id="trimFields" hidden>
+        <div class="hint">Cuts the shape with a straight through-line. The edge you cut off becomes a straight side of the piece, and the outside laser cut follows that closed outline.</div>
+        <div class="row"><button type="button" data-trim="bottom" class="grow">Flat bottom</button><button type="button" data-trim="top" class="grow">Flat top</button><button type="button" data-trim="left" class="grow">Flat left</button><button type="button" data-trim="right" class="grow">Flat right</button></div>
+        <label class="rg"><span>Angle</span><input type="range" id="trimAng" min="-180" max="180" step="1" value="0"><output id="trimAngOut">0°</output></label>
+        <label class="rg"><span>Position</span><input type="range" id="trimPos" min="-80" max="80" step="1" value="0"><output id="trimPosOut">0%</output></label>
+        <div class="hint" id="trimPosHint">0 = through the centre (a half-circle on a circle). Positive moves the line toward the side you keep (you keep less); negative keeps more than half.</div>
+        <div class="row"><label class="grow"><span>Keep</span><select id="trimKeep"><option value="1">This side</option><option value="-1">The other side</option></select></label><button type="button" id="trimFlip" class="grow">Flip side</button></div>
+        <div id="trimWarn" class="hint" hidden></div>
       </div>
     </div></details>
     <details name="acc" id="sec-text"><summary>Text on this layer</summary><div class="body">
