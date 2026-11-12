@@ -50,6 +50,7 @@
     <div id="layerRail" aria-label="Layers">
       <div id="layerRailCount" class="lrcount"></div>
       <div id="layerRailTrack" class="lrtrack" role="list"></div>
+      <button type="button" id="railAddText" class="lradd" title="Add more text on the current shape (no new outline or cut)">＋ Text</button>
     </div>
     <svg id="stage" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"></svg>
     <div class="stagehint">Tap a layer chip above to switch · letters: tap the glyph · empty space deselects · box-drag or Multi-select to add</div>
@@ -60,7 +61,8 @@
     <div id="layerBar">
       <div class="row"><b class="lbt">Layers</b><select id="shapeSel" class="grow" aria-label="Active layer (top of list = in front)"></select><button id="shapeVis" class="mini2" title="Show or hide this layer">Hide</button></div>
       <div id="addPicMenu" class="picmenu" hidden><b>Add which kind of image layer?</b><button data-addpic="1">🐶 Picture in the design<small>sits inside your shape (logo, pet, photo)</small></button><button data-addpic="2">🗺 Background / map<small>sits behind everything</small></button><button data-addpic="0" class="mini">Cancel</button></div>
-      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add layer</option><option value="circle">Circle</option><option value="halfcircle">Half circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia (detailed)</option><option value="auss">Australia (smooth, for text)</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
+      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add shape (new outline)</option><option value="circle">Circle</option><option value="halfcircle">Half circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia (detailed)</option><option value="auss">Australia (smooth, for text)</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
+      <div class="row"><button id="addTextBtn" class="accent grow" title="Add more text on the current shape - no new outline or cut">T + Add text</button></div>
       <div class="row"><button id="addPicBtn" class="accent addpic grow" title="Add an image layer (picture, logo or map)">🖼 + Add image layer</button></div>
     </div>
     <details name="acc" id="sec-shape"><summary>Shape &amp; position</summary><div class="body">
@@ -101,7 +103,8 @@
       </div>
     </div></details>
     <details name="acc" id="sec-text"><summary>Text on this layer</summary><div class="body">
-      <div class="row"><select id="layerSel" class="grow" aria-label="Text layer"></select><button id="addLayer" title="Add curved text on a shape">+ Curved</button><button id="addFreeLayer" class="accent" title="Add straight text you can place anywhere">+ Free text</button></div>
+      <div class="row"><select id="layerSel" class="grow" aria-label="Text layer"></select><button id="addLayer" title="Add curved text that follows the current shape">+ Curved text</button><button id="addFreeLayer" class="accent" title="Add straight text you can place anywhere">+ Straight text</button></div>
+      <div class="hint">Adds another line of text on this shape. No new outline or laser cut is made.</div>
       <div id="layerFields">
         <label class="full"><span>Text</span><input type="text" data-b="layer.text" maxlength="80"></label>
         <div class="g2">

@@ -189,3 +189,5 @@ button.mini{padding:1px 7px;font-size:11px;margin-left:6px}
 #layerRail button.lrchip{flex:none;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 12px;border-radius:999px;font-size:12px;line-height:1.2;min-height:34px;background:#2a2520e6;border:1px solid var(--line);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
 #layerRail button.lrchip.on{background:var(--amber);color:#1a1410;border-color:var(--amber);font-weight:700}
 #layerRail button.lrchip:active{transform:scale(.97)}
+
+#layerRail button.lradd{flex:none;pointer-events:auto;padding:7px 12px;border-radius:999px;font-size:12px;font-weight:700;min-height:34px;background:#2a2520e6;border:1px dashed var(--amber);color:var(--amber);cursor:pointer;white-space:nowrap}

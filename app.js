@@ -740,7 +740,15 @@ $('fontSel').innerHTML = [...new Set(FONTS.map(f => f[2]))].map(g => `<optgroup 
 $('fontSel').addEventListener('change', () => { const L = curLayer(); if (L && SCRIPT.has(L.font) && L.spacing > 0) { L.spacing = 0; update(); commit(); } $('fontSel').style.fontFamily = `'WF ${$('fontSel').value}'`; });
 $('layerSel').addEventListener('change', e => { sel.layer = e.target.value; update(); });
 const act = (id, fn) => $(id).addEventListener('click', () => { fn(); fixSel(); update(); commit(); });
-act('addLayer', () => { const L = newLayer('NEW TEXT', 'top'); L.ring = 'outer'; L.shape = curShape().id; S.layers.push(L); sel.layer = L.id; });
+act('addLayer', () => { const L = newLayer('NEW TEXT', 'top'), sh = curShape(), used = S.layers.filter(l => !l.free && l.text && shapeOf(l) === sh).map(l => l.side + ':' + l.ring);
+  const slot = [['top', 'between'], ['bottom', 'between'], ['top', 'inner'], ['bottom', 'inner'], ['top', 'outer'], ['bottom', 'outer']].find(([s, r]) => !used.includes(s + ':' + r)) || ['top', 'inner']; // first free spot on this shape, so new text doesn't land on top of existing words
+  L.side = slot[0]; L.ring = slot[1]; L.shape = sh.id; S.layers.push(L); sel.layer = L.id; sel.letters = []; sel.orn = null; sel.img = false; openSec('sec-text');
+  setTimeout(() => { const el = document.querySelector('[data-b="layer.text"]'); if (el) { el.focus(); el.select(); } }, 0); });
+// v50: one obvious way to add more text on the CURRENT shape (no new shape layer, outline or cut)
+async function addTextAsk() { const sh = curShape(), many = S.shapes.length > 1;
+  const k = await askDlg('Add text' + (many ? ' on "' + sh.name + '"' : '') + ' - no new outline or cut', [['curved', 'Curved – follows the shape', 'accent'], ['free', 'Straight (free text)'], [null, 'Cancel']]);
+  if (k === 'curved') $('addLayer').click(); else if (k === 'free') $('addFreeLayer').click(); }
+$('addTextBtn') && ($('addTextBtn').onclick = addTextAsk); $('railAddText') && ($('railAddText').onclick = addTextAsk);
 act('addFreeLayer', () => { const L = newLayer('Your text', 'top'); L.free = true; L.x = C; L.y = C; L.rot = 0; L.size = 70; L.shape = curShape().id;
   S.layers.push(L); sel.layer = L.id; sel.letters = []; sel.orn = null; sel.img = false; openSec('sec-text');
   setTimeout(() => { const el = document.querySelector('[data-b="layer.text"]'); if (el) { el.focus(); el.select(); } }, 0); });
@@ -1497,8 +1505,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v49';
-const WHATS_NEW = "v49: Trim any shape with a straight line (or add a Half circle). Choose the cut angle, how far across the shape it sits, and which side to keep. The cut-off edge becomes part of the closed outside cut. Existing designs are unchanged until you turn trim on.";
+const APP_VERSION = 'v50';
+const WHATS_NEW = "v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
