@@ -11,6 +11,11 @@ Wayland Forge sets text around a badge ring (circle, ellipse, polygon, star or h
 - PDF: vector, page = size + bleed on every side.
 - PNG: size × DPI, or the Printify 4500×4500 px preset.
 
+## Send to Waylands Path (v52)
+- **✏️ Send to Waylands Path** (in the Laser section and under Export) opens the design in Waylands Path (same website) as a new project for line editing.
+- It sends the artwork as an SVG in true mm (page = Laser W × H; letters are already glyph outlines). Each part follows its Laser job: Etch parts become etch lines (shape rings as one centre line with their width), Cut inside / Cut outside parts become cut lines, Skip parts are left out. Photos stay in Forge; traced or silhouette pictures go across as outlines.
+- The hand-over uses the shared `wayland-share` IndexedDB on this site. Forge's laser files are unchanged (byte-compared before and after).
+
 ## Licences
 - Fonts: SIL OFL 1.1 (see `fonts/*-OFL.txt`).
 - opentype.js, jsPDF and svg2pdf.js: MIT (see `vendor/`).

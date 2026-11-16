@@ -1505,8 +1505,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v51';
-const WHATS_NEW = "v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
+const APP_VERSION = 'v52';
+const WHATS_NEW = "v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1665,7 +1665,28 @@ $('projDedupe') && ($('projDedupe').onclick = async () => { const { out, gone } 
 window.WF_SYNC = { now: syncNow, meta: sm, get state() { return sy.state; }, set big(v) { sy.big = v; }, forget() { tokForget(); }, dedupe: dedupeProjs };
 
 // ---------- boot ----------
-window.WF = { loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
+// ---------- v52: Send to Waylands Path. Writes the artwork as an SVG in true mm (letters already outlines) into storage both apps share
+// (same website), then opens Waylands Path, which imports it as a new project. Read-only for the design; the laser export is not touched.
+function shareDb() { return new Promise((ok, no) => { const r = indexedDB.open('wayland-share', 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('x')) r.result.createObjectStore('x'); }; r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); }); }
+async function sharePut(key, val) { const db = await shareDb(); try { await new Promise((ok, no) => { const t = db.transaction('x', 'readwrite'); t.objectStore('x').put(val, key); t.oncomplete = ok; t.onerror = () => no(t.error); }); } finally { db.close(); } }
+async function pathArt() { await imgReady();
+  const W = +$('lzW').value, H = +$('lzH').value; if (!(W >= 5 && H >= 5)) throw new Error('Set the size (W mm and H mm) in the Laser section first.');
+  const P = lzPage(W, H), mm = a => +(a / P.k).toFixed(3), etchL = [], cutL = []; let photos = 0, n = 0;
+  for (const it of laserItems()) { const r = roleOf(it); if (r === 'off') continue;
+    if (it.im) { const pr = procImage(it.im); if (r === 'image' || !(pr && pr.paths)) { photos++; continue; } }
+    if (r === 'cutin' || r === 'cutout') { const m = laserPart(it, r); if (m) { cutL.push(m); n++; } continue; }
+    if (it.part === 'outer' || it.part === 'inner') { const sh = it.sh, m = withShape(sh, () => { const b = SB(), d = ringD(it.part === 'outer' ? 0 : -b.gap); return d ? `<path d="${d}" data-wpw="${mm(b.width)}"/>` : ''; }); if (m) { etchL.push(wrapSh(sh, m)); n++; } continue; } // shape line = one centre line with its width
+    const m = laserPart(it, 'fill') + (it.key === 'orn' ? laserPart({ ...it, wide: true }, 'fill') : ''); if (m) { etchL.push(m); n++; } }
+  if (!n) throw new Error(photos ? 'This design is only a photo - Waylands Path works with lines. Open the picture straight in Waylands Path to trace it.' : 'Nothing to send - every part is set to Skip.');
+  const sw = f2(0.2 * P.k), body = `<g data-wp="etch" fill="none" stroke="#000" stroke-width="${sw}">${etchL.join('')}</g><g data-wp="cut" fill="none" stroke="#000" stroke-width="${sw}">${cutL.join('')}</g>`;
+  return { svg: lzSVG(W, H, body, designName() || 'Wayland Forge design'), W, H, photos, name: designName() || 'Forge design' }; }
+async function sendToPath() { let a; try { a = await pathArt(); } catch (e) { toast(e.message); return; }
+  if (!confirm(`Open this design in Waylands Path to edit the lines?\n\n• It opens there as a new project, ${f2(a.W)} × ${f2(a.H)} mm page.\n• Letters arrive as outlines (a line round each letter), not single lines.${a.photos ? `\n• ${a.photos} photo${a.photos > 1 ? 's stay' : ' stays'} in Forge (Waylands Path works with lines).` : ''}\n• Your design here in Forge is kept just as it is.`)) return;
+  try { saveNow(); await sharePut('toPath', { v: 1, from: 'wayland-forge', name: a.name, svg: a.svg, W: a.W, H: a.H, photos: a.photos, t: Date.now() }); }
+  catch (e) { toast('Could not hand the design over: ' + (e.message || e)); return; }
+  location.href = new URL('../waylands-path/?from=forge', location.href).href; }
+document.querySelectorAll('[data-topath]').forEach(b => b.addEventListener('click', sendToPath));
+window.WF = { pathArt, sendToPath, loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
 (async () => {
   await kvLoad(); migrateProjs();
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
