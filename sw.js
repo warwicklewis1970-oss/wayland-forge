@@ -1,5 +1,5 @@
 // Wayland Forge service worker: cache everything for offline use.
-const VERSION = 'wayland-forge-v50';
+const VERSION = 'wayland-forge-v51';
 const ASSETS = [
   './', './index.html', './style.css', './js/app.js', './js/blacksmith.js', './js/tour.js', './manifest.webmanifest',
   './vendor/opentype.min.js', './vendor/jspdf.umd.min.js', './vendor/svg2pdf.umd.min.js', './vendor/imagetracer.js',
@@ -25,7 +25,7 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k.startsWith('wayland-forge-')).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 // Network first (so updates show immediately), cache as offline fallback.
 self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(); });
