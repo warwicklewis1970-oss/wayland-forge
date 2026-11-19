@@ -33,3 +33,7 @@ Once opened, it works offline. Your designs autosave in the browser. To keep a c
 
 ## Laser pack (LaserGRBL)
 Open **Laser (LaserGRBL)**, give each part a job (Image, Etch, Cut inside edge, Cut outside edge or Skip), type the real size in mm and download the steps. Every file is the same mm page anchored at the laser's 0,0. Letters, ornaments (filled or hollow) and cuts are SVG, which LaserGRBL positions from the page itself, so they always line up: File > Open File > speed and power > Create!. Photo and filled letters are ready-to-run G-code (.nc) with mode, power and speed set in the app (Burn settings: Mode, Power %, Speed per step, no materials): File > Open File > Start, nothing to size or offset (PNG pictures remain as a setting).
+
+## v53 - Image frame
+
+Image layers › Placement › **Inside my own frame (a shape you adjust)** gives a picture its own frame, separate from the text path. Start from an Oval, Rectangle, Rounded rectangle or your Path shape, then on the picture: drag inside to move it, drag a dot to bend it, side squares stretch one way, corner squares resize, ⟳ turns it. Or type Width / Height mm and Turn °. + Add point, − Remove point, Make corner / smooth, All smooth / All corners, Centre on picture, ↺ Reset frame. The picture (screen, SVG, PDF and laser image steps) is trimmed to the frame. The frame line itself is **not burned** unless you choose Etch or Cut under "Frame line on the laser" (also listed in the Laser list as "… – frame line", Skip by default). Laser files are unchanged unless a frame is used.

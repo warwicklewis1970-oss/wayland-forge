@@ -51,7 +51,7 @@ const imgShape = () => S.shapes[0];
 const IM = () => S.images.find(i => i.id === sel.slot) || null; // image layer being edited
 const setIM = v => { const i = S.images.findIndex(x => x.id === sel.slot); if (!v) { if (i >= 0) S.images.splice(i, 1); return; } if (i >= 0) S.images[i] = v; else S.images.push(v); };
 const imgName = im => esc(im.name || 'Image') + (im.behind ? ' · behind' : '') + (im.src ? '' : ' (empty)');
-const CLIPS = ['clip', 'clipout', 'outside', 'outin', 'free'];
+const CLIPS = ['clip', 'clipout', 'outside', 'outin', 'free', 'frame'];
 const clipOf = im => CLIPS.includes(im.clipMode) ? im.clipMode : (im.clip ? 'clip' : 'free');
 const clipShapeOf = im => S.shapes.find(x => x.id === im.clipShape) || S.shapes[0];
 // Clip outline for a picture: the chosen layer's line, at its inside edge (edge -1) or outside edge (+1) of the line width.
@@ -424,6 +424,7 @@ function fillInner0(im) {
 
 // ---------- SVG builder (shared by editor and exports) ----------
 function imgWrap(im, el, cid) { const m = clipOf(im);
+  if (m === 'frame') return window.FR && FR.on(im) ? `<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse"><path d="${FR.d(im.frame)}"/></clipPath></defs><g clip-path="url(#${cid})">${el}</g>` : el; // v53 image frame
   if (m === 'clip' || m === 'clipout') return `<defs><clipPath id="${cid}" clipPathUnits="userSpaceOnUse">${clipEl(im, m === 'clip' ? -1 : 1)}</clipPath></defs><g clip-path="url(#${cid})">${el}</g>`;
   if (m === 'outside' || m === 'outin') return `<defs><mask id="${cid}" maskUnits="userSpaceOnUse" x="-6000" y="-6000" width="13000" height="13000"><rect x="-6000" y="-6000" width="13000" height="13000" fill="#fff"/>${clipEl(im, m === 'outside' ? 1 : -1, 'fill="#000"')}</mask></defs><g mask="url(#${cid})">${el}</g>`;
   return el; }
@@ -550,7 +551,7 @@ function render() {
   const bgFill = S.bg === 'color' ? S.bgColor : 'none';
   syncOrns();
   stage.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
-  stage.innerHTML = `<rect x="0" y="0" width="${ART}" height="${ART}" fill="${bgFill}" stroke="#6b5f50" stroke-dasharray="6 6" data-k="bg"/>` + buildArt(true) + laserOverlay();
+  stage.innerHTML = `<rect x="0" y="0" width="${ART}" height="${ART}" fill="${bgFill}" stroke="#6b5f50" stroke-dasharray="6 6" data-k="bg"/>` + buildArt(true) + laserOverlay() + (window.FR ? FR.overlay() : '');
   persist();
 }
 function syncUI() {
@@ -604,7 +605,7 @@ function syncUI() {
     const pr = partnerOf(oc); $('ornLink').hidden = !pr; $('mirrorOrn').hidden = !!pr; }
   const isLineOrn = curOrn() && curOrn().style === 'line'; $('ornWidthRow').hidden = !isLineOrn; $('ornWidthHint').hidden = !isLineOrn; if (isLineOrn && document.activeElement !== $('ornWidth')) $('ornWidth').value = isLineOrn.lineWidth > 0 ? String(isLineOrn.lineWidth) : '';
   $('ornFields').hidden = !curOrn(); $('ornWidthRow').hidden = !isLineOrn || $('ornFields').hidden; $('ornWidthHint').hidden = $('ornWidthRow').hidden; $('ornBerry').hidden = !(curOrn() && /holly/.test(curOrn().type)); $('ornNone').hidden = !!curOrn() || !S.ornaments.length;
-  $('imgFields').hidden = !IM(); $('imgClipRow').hidden = false; if (IM()) { const im = IM(); $('imgClipLine').innerHTML = S.shapes.map(x => ['inner', 'outer'].map(l => `<option value="${x.id}|${l}">${esc(x.name)} – ${l} line</option>`).join('')).join(''); $('imgClipLine').value = clipShapeOf(im).id + '|' + (im.clipLine || 'inner'); $('imgClipLine').parentElement.hidden = clipOf(im) === 'free'; } document.querySelectorAll('[data-slotbtn]').forEach(b => b.setAttribute('aria-pressed', String((sel.slot || 1) === +b.dataset.slotbtn)));
+  $('imgFields').hidden = !IM(); $('imgClipRow').hidden = false; if (IM()) { const im = IM(); $('imgClipLine').innerHTML = S.shapes.map(x => ['inner', 'outer'].map(l => `<option value="${x.id}|${l}">${esc(x.name)} – ${l} line</option>`).join('')).join(''); $('imgClipLine').value = clipShapeOf(im).id + '|' + (im.clipLine || 'inner'); $('imgClipLine').parentElement.hidden = clipOf(im) === 'free' || clipOf(im) === 'frame'; } if (window.FR) FR.sync(); document.querySelectorAll('[data-slotbtn]').forEach(b => b.setAttribute('aria-pressed', String((sel.slot || 1) === +b.dataset.slotbtn)));
   $('imgSel').innerHTML = S.images.length ? S.images.slice().reverse().map(i => `<option value="${i.id}"${i.id === sel.slot ? ' selected' : ''}>${imgName(i)}</option>`).join('') : '<option value="">No image layers yet</option>';
   ['imgRen', 'imgUp', 'imgDown', 'delImg'].forEach(k => $(k).disabled = !IM()); $('imgUploadRow').hidden = !IM(); $('imgDepth').value = IM() && IM().behind ? 'behind' : 'front';
   $('imgSlotHint').textContent = !S.images.length ? 'Tap + Add image layer to add a picture, logo or map. You can add as many as you like.' : !IM() ? 'Pick an image layer above.' : (IM().behind ? 'This layer sits behind everything (good for a map). ' : 'This layer sits inside your design. ') + (IM().src ? '' : 'Tap Upload to choose its picture.');
@@ -974,10 +975,11 @@ stage.addEventListener('pointerdown', e => {
   if (drag) return; // second finger etc.
   const t = e.target.closest('[data-k]'), k = t && t.dataset.k, p = svgPt(e);
   stage.setPointerCapture(e.pointerId);
-  if (e.button === 1 || spaceDown || (mode.pan && k !== 'ch' && k !== 'orn' && k !== 'img')) {
+  if (e.button === 1 || spaceDown || (mode.pan && k !== 'ch' && k !== 'orn' && k !== 'img' && k !== 'frm')) {
     e.preventDefault(); drag = { pan: true, sx: e.clientX, sy: e.clientY, v: { ...view } }; stage.classList.add('panning'); return;
   }
   if (e.button > 0) return;
+  if (k === 'frm' && window.FR) { const g = FR.down(t, p); if (g) { drag = g; drag.sx = e.clientX; drag.sy = e.clientY; sel.img = true; update(); return; } } // v53 image frame handles
   sel.img = false;
   if (k === 'ch') {
     const l = t.dataset.l, i = +t.dataset.i; sel.layer = l; sel.orn = null; { const L0 = S.layers.find(x => x.id === l); if (L0) sel.shape = shapeOf(L0).id; }
@@ -1005,6 +1007,7 @@ stage.addEventListener('pointermove', e => {
   if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 3) return; // click tolerance
   drag.moved = true; const p = svgPt(e), dx = p.x - drag.p.x, dy = p.y - drag.p.y;
   if (drag.mq) { drawMarquee(p); return; }
+  if (drag.frm) { FR.move(drag, p); return; }
   if (drag.letters) { let ux = dx, uy = dy; if (drag.sh) { const a = -(drag.sh.rot || 0) * Math.PI / 180, k = drag.sh.scale || 1; ux = (dx * Math.cos(a) - dy * Math.sin(a)) / k; uy = (dx * Math.sin(a) + dy * Math.cos(a)) / k; }
     for (const q of drag.letters) { q.o.dx = f2(q.x0 + ux); q.o.dy = f2(q.y0 + uy); } }
   else if (drag.orn && drag.obj.follow && drag.obj.follow.on) { const f = drag.obj.follow; f.t = pathNearest(pathSamples(f.shape, f.path), drag.x0 + dx, drag.y0 + dy); }
@@ -1021,6 +1024,7 @@ function endDrag(e) {
     });
     if (sel.letters.length) openSec('sec-letter');
   }
+  if (d.frm) { FR.up(d, d.moved); update(); if (d.moved) commit(); return; }
   if (d.collapse && !d.moved) sel.letters = [d.collapse];
   if (d.openLetter && !d.moved && sel.letters.length) openSec('sec-letter');
   update(); if (d.moved && !d.mq && !d.pan) commit();
@@ -1142,6 +1146,7 @@ function laserItems() {
   S.images.filter(im => im.src && im.visible !== false).forEach(im => it.push({ key: 'img:' + im.id, im, name: (im.name || 'Image') + (im.mode === 'trace' ? ' (trace)' : im.mode === 'sil' ? ' (silhouette)' : ''), def: im.mode === 'orig' ? 'image' : 'etch' }));
   const z = x => x.im ? (x.im.behind ? 0 : 2) : x.part === 'fill' && !x.sh.base.fillAbove ? 1 : x.part === 'fill' ? 3 : 4; // same stacking as the design
   for (const L of S.layers) if (L.free && L.text) it.push({ key: 't:' + L.id, name: 'Free text: ' + L.text, def: 'etch' });
+  if (window.FR) S.images.filter(im => im.src && im.visible !== false && FR.on(im)).forEach(im => it.push({ key: 'frm:' + im.id, name: (im.name || 'Image') + ' – frame line', def: 'off' })); // v53: off (Skip) unless chosen
   return it.map((x, i) => [x, i]).sort((p, q) => z(p[0]) - z(q[0]) || p[1] - q[1]).map(p => p[0]);
 }
 const roleOf = it => S.laser[it.key] || it.def;
@@ -1166,9 +1171,11 @@ function laserPart0(it, kind) {
   if (k === 'fill') return `<path d="${ringD(0)}"${kind === 'pic' ? ` fill="${b.fill}"` : ''}/>`;
   if (k === 'orn') return S.ornaments.filter(o => !it.ornStyle || (o.style === 'line' ? 'line' : 'fill') === it.ornStyle).filter(o => it.wide ? o.lineWidth > 0 : !(o.style === 'line' && o.lineWidth > 0)).map(o => `<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${kind === 'pic' || kind === 'wide' ? ornPaint(o) : ''}>${ornSvg(o, kind === 'pic')}</g>`).join('');
   if (k.startsWith('t:')) { const L = S.layers.find(l => 't:' + l.id === k); if (!L) return ''; return `<g${kind === 'pic' ? (L.style === 'hollow' ? ` fill="none" stroke="${L.color}" stroke-width="2.5"` : ` fill="${L.color}"`) : ''}>` + layoutLayer(L).map(q => `<path d="${q.d}" transform="${q.tr}"/>`).join('') + '</g>'; }
+  if (k.startsWith('frm:')) { const im = S.images.find(i => 'frm:' + i.id === k); return im && window.FR && FR.on(im) ? `<path d="${FR.d(im.frame)}"${kind === 'pic' ? ' fill="none" stroke="#000" stroke-width="2"' : ''}/>` : ''; } // v53 image frame line (only when its burn is not Skip)
   if (k.startsWith('img:') && (it.im || S.images.find(i => 'img:' + i.id === k))) {
     const im = it.im || S.images.find(i => 'img:' + i.id === k), pr = procImage(im), vec = pr && pr.paths;
-    const cm = clipOf(im); if (cut && (cm === 'clip' || cm === 'clipout' || !vec)) return cm === 'clip' || cm === 'clipout' ? clipEl(im, cm === 'clip' ? -1 : 1) : `<path d="${imgBox(im)}"/>`;
+    const cm = clipOf(im); if (cut && cm === 'frame' && window.FR && FR.on(im)) return `<path d="${FR.d(im.frame)}"/>`; // v53: cutting a framed picture cuts along its frame
+    if (cut && (cm === 'clip' || cm === 'clipout' || !vec)) return cm === 'clip' || cm === 'clipout' ? clipEl(im, cm === 'clip' ? -1 : 1) : `<path d="${imgBox(im)}"/>`;
     if (vec && (cut || kind === 'fill')) { const s = im.size / Math.max(pr.w, pr.h);
       return imgWrap(cut ? { clipMode: 'free' } : im, `<g transform="translate(${f2(im.x - pr.w * s / 2)} ${f2(im.y - pr.h * s / 2)}) scale(${+s.toFixed(5)})" fill-rule="evenodd">${pr.paths.map(d => `<path d="${d}"/>`).join('')}</g>`, 'wflz' + uid()); }
     const cid = 'wflz' + uid(); // raster picture (also used for "etch" of a photo/silhouette: it goes in the etch PNG)
@@ -1340,7 +1347,7 @@ async function laserSteps() { await imgReady();
   if (imgItems.length && !nc) st.push({ kind: 'ENGRAVE', job: 'photo', what: 'photo', type: 'png', items: imgItems, crop: cPh, mode: `Line To Line Tracing, ${lpm} lines/mm`,
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
     data: async () => pngDpi(await lzPNG(W, H, dpi, phBody(), false, false, cPh, cMask), dpi) });
-  const isLine = it => (it.key === 'orn' && it.ornStyle === 'line') || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
+  const isLine = it => it.key.startsWith('frm:') || (it.key === 'orn' && it.ornStyle === 'line') || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
   const wideOrns = S.ornaments.filter(o => o.style === 'line' && o.lineWidth > 0);
   const eWide = wideOrns.length ? etch.filter(it => it.key === 'orn' && it.ornStyle === 'line').map(it => ({ ...it, wide: true })) : [];
   const eThin = etch.filter(it => !(it.key === 'orn' && it.ornStyle === 'line') || wideOrns.length !== S.ornaments.filter(o => o.style === 'line').length);
@@ -1505,8 +1512,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v52';
-const WHATS_NEW = "v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
+const APP_VERSION = 'v53';
+const WHATS_NEW = "v53: New Image frame. In Image layers › Placement choose \"Inside my own frame\": a separate shape (oval, rectangle, rounded or your path shape) that trims the picture. Drag its dots to bend it, the side squares to stretch it, the ⟳ to turn it, or type the size. Pull it in to clear letters that sit outside the path. The frame is not burned unless you choose to etch or cut it. Laser files are unchanged unless you use a frame. v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1686,7 +1693,8 @@ async function sendToPath() { let a; try { a = await pathArt(); } catch (e) { to
   catch (e) { toast('Could not hand the design over: ' + (e.message || e)); return; }
   location.href = new URL('../waylands-path/?from=forge', location.href).href; }
 document.querySelectorAll('[data-topath]').forEach(b => b.addEventListener('click', sendToPath));
-window.WF = { pathArt, sendToPath, loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
+window.FR = window.FRmake ? window.FRmake({ get S() { return S; }, get sel() { return sel; }, get view() { return view; }, stage, render, update, commit, IM, imgAspect, mmPerArt, pathSamples, clipShapeOf, toast }) : null; if (window.FR) FR.init(); // v53 image frame
+window.WF = { pathArt, sendToPath, get FR() { return window.FR; }, IM: () => IM(), laserSteps, mmPerArt: () => mmPerArt(), render: () => render(), commit: () => commit(), loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
 (async () => {
   await kvLoad(); migrateProjs();
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));

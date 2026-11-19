@@ -135,8 +135,23 @@
       <div class="row" id="imgUploadRow"><label class="filebtn grow">Upload / replace picture…<input type="file" id="imgFile" accept="image/*" hidden></label><button id="imgLink" title="Load a PNG or SVG from a web link">Load from link…</button><button id="centreImg">Centre</button></div>
       <div id="imgFields">
         <label class="rg"><span>Size</span><input type="range" min="40" max="1600" step="1" data-b="img.size"><output></output></label>
-        <label id="imgClipRow"><span>Placement</span><select data-b="img.clipMode"><option value="clip">Inside path (to inside edge of line)</option><option value="clipout">Inside, to outside edge of line</option><option value="outside">Outside path only</option><option value="outin">Outside, from inside edge (runs under line)</option><option value="free">Free – no clipping</option></select></label>
+        <label id="imgClipRow"><span>Placement</span><select data-b="img.clipMode"><option value="clip">Inside path (to inside edge of line)</option><option value="clipout">Inside, to outside edge of line</option><option value="outside">Outside path only</option><option value="outin">Outside, from inside edge (runs under line)</option><option value="frame">Inside my own frame (a shape you adjust)</option><option value="free">Free – no clipping</option></select></label>
         <label><span>Path</span><select id="imgClipLine"></select></label>
+        <div id="imgFrameBox" class="frbox" hidden>
+          <p class="hint"><b>Image frame:</b> a separate shape that trims this picture. Pull it in to keep the picture off the letters, even letters pushed outside the path. It is <b>not burned</b> unless you choose that below.</p>
+          <div class="frst"><span>Start shape</span><button data-frstart="oval">◯ Oval</button><button data-frstart="rect">▭ Rectangle</button><button data-frstart="round">▢ Rounded</button><button data-frstart="path">⬭ Path shape</button></div>
+          <button id="frEdit" class="wide accent">✎ Edit frame on the picture</button>
+          <div id="frEditRows">
+            <p class="hint">Drag inside the frame to move it · drag a dot to bend it · side squares stretch it · corner squares resize it · ⟳ turns it.</p>
+            <div class="g3 frnum"><label>Width mm<input type="number" id="frW" inputmode="decimal" min="1" step="0.5"></label><label>Height mm<input type="number" id="frH" inputmode="decimal" min="1" step="0.5"></label><label>Turn °<input type="number" id="frRot" inputmode="decimal" min="-360" max="360" step="1"></label></div>
+            <div class="frbtns"><button id="frAdd">+ Add point</button><button id="frDel">− Remove point</button><button id="frSmooth">⌃ Make corner</button></div>
+            <div class="frbtns"><button id="frAllSmooth">All smooth</button><button id="frAllCorner">All corners</button><button id="frCentre">Centre on picture</button></div>
+          </div>
+          <button id="frReset" class="wide">↺ Reset frame (back to its start shape)</button>
+          <label class="chk"><input type="checkbox" id="frShow">Show the frame line on screen (screen only)</label>
+          <label><span>Frame line on the laser</span><select id="frBurn"><option value="off">Not burned – only trims the picture</option><option value="etch">Etch the frame line</option><option value="cutin">Cut along the frame (inside cut)</option><option value="cutout">Cut along the frame (outside cut, last)</option></select></label>
+          <p class="hint" id="frBurnHint"></p>
+        </div>
         <div class="row"><button id="fitImg" class="grow" title="Scale and centre so the whole image sits inside the inner line">⤢ Fit inside line</button><button id="fillImg" class="grow" title="Scale to cover the inner shape and clip it to the line">◉ Fill &amp; clip</button></div>
         <label><span>Style</span><select data-b="img.mode"><option value="orig">Original picture</option><option value="sil">Silhouette (solid cutout)</option><option value="trace">Vector trace (SVG paths)</option></select></label>
         <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.removeBg">Remove background (corner colour)</label>
@@ -255,6 +270,7 @@
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/svg2pdf.umd.min.js"></script>
 <script src="vendor/imagetracer.js"></script>
+<script src="js/frame.js"></script>
 <script src="js/app.js"></script>
 <script src="js/blacksmith.js"></script>
 <script src="js/tour.js"></script>
