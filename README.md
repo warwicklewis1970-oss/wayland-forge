@@ -34,6 +34,14 @@ Once opened, it works offline. Your designs autosave in the browser. To keep a c
 ## Laser pack (LaserGRBL)
 Open **Laser (LaserGRBL)**, give each part a job (Image, Etch, Cut inside edge, Cut outside edge or Skip), type the real size in mm and download the steps. Every file is the same mm page anchored at the laser's 0,0. Letters, ornaments (filled or hollow) and cuts are SVG, which LaserGRBL positions from the page itself, so they always line up: File > Open File > speed and power > Create!. Photo and filled letters are ready-to-run G-code (.nc) with mode, power and speed set in the app (Burn settings: Mode, Power %, Speed per step, no materials): File > Open File > Start, nothing to size or offset (PNG pictures remain as a setting).
 
+## v55 - Send to Waylands Post
+
+The Export and Laser sheets have **📦 Send to Waylands Post (make the files)**. On this same phone or tablet it opens the design in [Waylands Post](https://warwicklewis1970-oss.github.io/waylands-post/). To send it to a laptop, still use **Save as Wayland design**.
+
+**Send to Waylands Path**, **Download file** and **Export** are unchanged. A saved copy of v53 stays at https://warwicklewis1970-oss.github.io/wayland-forge/v53/.
+
+**No laser changes.** Existing projects export exactly as in v54.
+
 ## v54 - Wayland design file, and a saved copy of v53
 
 **💾 Save as Wayland design** (on the Export and Laser sheets) writes a `.wayland.json` file that Waylands Path can open. **✏️ Send to Waylands Path** still works as before, and also attaches that file so a newer Path can use it. **Download file**, **Load…** and **Export** are unchanged. Load… also opens a Wayland design (lettering comes back if the file was saved from Forge; lines from Path arrive as imported lines).

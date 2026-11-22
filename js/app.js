@@ -1531,8 +1531,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v54';
-const WHATS_NEW = "v54: Save as Wayland design – a file Waylands Path can open too. Send to Waylands Path still works as before. A saved copy of v53 is kept if you need to go back. Your usual Export buttons are unchanged. v53: New Image frame. In Image layers › Placement choose \"Inside my own frame\": a separate shape (oval, rectangle, rounded or your path shape) that trims the picture. Drag its dots to bend it, the side squares to stretch it, the ⟳ to turn it, or type the size. Pull it in to clear letters that sit outside the path. The frame is not burned unless you choose to etch or cut it. Laser files are unchanged unless you use a frame. v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
+const APP_VERSION = 'v55';
+const WHATS_NEW = "v55: Send to Waylands Post – preview and make the files there. Your usual Export buttons stay as they are, and a saved copy of v53 is still kept. v54: Save as Wayland design – a file Waylands Path can open too. Send to Waylands Path still works as before. A saved copy of v53 is kept if you need to go back. Your usual Export buttons are unchanged. v53: New Image frame. In Image layers › Placement choose \"Inside my own frame\": a separate shape (oval, rectangle, rounded or your path shape) that trims the picture. Drag its dots to bend it, the side squares to stretch it, the ⟳ to turn it, or type the size. Pull it in to clear letters that sit outside the path. The frame is not burned unless you choose to etch or cut it. Laser files are unchanged unless you use a frame. v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1714,6 +1714,18 @@ async function sendToPath() { let a; try { a = await pathArt(); } catch (e) { to
   location.href = new URL('../waylands-path/?from=forge', location.href).href; }
 document.querySelectorAll('[data-topath]').forEach(b => b.addEventListener('click', sendToPath));
   ['wdSave','wdSave2'].forEach(id => { const el = $(id); if (el) el.addEventListener('click', () => saveWaylandDesign().catch(e => toast(e.message || String(e)))); });
+  ['toPostBtn','toPostBtn2'].forEach(id => { const el = $(id); if (el) el.addEventListener('click', () => sendToPost().catch(e => toast(e.message || String(e)))); });
+
+
+async function sendToPost() {
+  let art = null; try { art = await pathArt(); } catch (e) { art = null; }
+  if (!art || !art.svg) { toast('Nothing to send yet'); return; }
+  if (!confirm('Open this design in Waylands Post?\n\n• Post previews it and makes the laser or print files.\n• Your design here in Wayland Forge is kept just as it is.\n• Your usual Export buttons here still work.\n• If you are sending it to a laptop, tap Cancel and use Save as Wayland design instead.')) return;
+  const design = WD.fromForge(S, { W: art.W, H: art.H, name: art.name || designName() || 'Untitled', version: APP_VERSION, svg: art.svg, photos: art.photos, items: [] });
+  try { saveNow(); await sharePut('toPost', { v: 2, from: 'wayland-forge', name: design.name, design, svg: art.svg, W: art.W, H: art.H, t: Date.now() }); }
+  catch (e) { toast('Could not hand the design over: ' + (e.message || e)); return; }
+  location.href = new URL('../waylands-post/?from=forge', location.href).href;
+}
 
 async function saveWaylandDesign() {
   let art = null; try { art = await pathArt(); } catch (e) { art = null; }
@@ -1762,7 +1774,7 @@ async function checkPath() {
 }
 
 window.FR = window.FRmake ? window.FRmake({ get S() { return S; }, get sel() { return sel; }, get view() { return view; }, stage, render, update, commit, IM, imgAspect, mmPerArt, pathSamples, clipShapeOf, toast }) : null; if (window.FR) FR.init(); // v53 image frame
-window.WF = { pathArt, sendToPath, saveWaylandDesign, openWaylandInForge, get FR() { return window.FR; }, IM: () => IM(), laserSteps, mmPerArt: () => mmPerArt(), render: () => render(), commit: () => commit(), loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
+window.WF = { pathArt, sendToPath, saveWaylandDesign, openWaylandInForge, sendToPost, get FR() { return window.FR; }, IM: () => IM(), laserSteps, mmPerArt: () => mmPerArt(), render: () => render(), commit: () => commit(), loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
 (async () => {
   await kvLoad(); migrateProjs();
   setTimeout(() => checkPath().catch(e => console.warn(e)), 80);
