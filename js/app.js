@@ -466,7 +466,17 @@ function buildArt(editor) {
     out.push(`<g transform="translate(${f2(o.x)} ${f2(o.y)}) rotate(${o.rot})${o.flip ? ' scale(-1 1)' : ''}"${ornPaint(o)}${editor ? ` data-k="orn" data-id="${o.id}" pointer-events="visible"` : ''}>${shape}${editor && sel.orn === o.id ? `<circle r="${o.r * (o.type === 'star' || o.type === 'dot' ? 1 : 1.15) + 8}" fill="none" stroke="#e0a043" stroke-dasharray="6 4" stroke-width="2"/>` : ''}</g>`);
   }
   if (S.hole && S.hole.on) out.push(holeSvg(editor));
+  if (S.imports && S.imports.length) out.push(importArt());
   return out.join('\n');
+}
+function importArt() {
+  const W = +($('lzW') || {}).value || 100, H = +($('lzH') || {}).value || 100, P = lzPage(W, H);
+  const inner = (S.imports || []).map(im => {
+    const cut = im.role === 'cut-outer' || im.role === 'cut-inner';
+    const sw = (im.strokeMm || 0.3) / (W > 0 ? Math.min(W, H) / ART : 1);
+    return '<path d="' + (im.dMm || im.d) + '" fill="none" stroke="' + (cut ? '#e03131' : '#1b1b1b') + '" stroke-width="' + f2(sw) + '" stroke-linejoin="round" stroke-linecap="round"/>';
+  }).join('');
+  return '<g data-wd="imports" transform="translate(' + f2(P.vx) + ' ' + f2(P.vy) + ') scale(' + (+P.k.toFixed(6)) + ')">' + inner + '</g>';
 }
 // ---- hanging hole (v39): one round hole, diameter in real mm, cut in the 'Cut inside' laser step ----
 function mmPerArt() { const W = +($('lzW') || {}).value, H = +($('lzH') || {}).value, s = Math.min(W, H); return (s >= 5 ? s : 100) / ART; }
@@ -678,7 +688,8 @@ function sanitize(raw) {
     ornaments: linkMirrors(Array.isArray(o.ornaments) ? o.ornaments.filter(x => x && ORN_TYPES.includes(x.type)).map(x => ({ ...x, style: x.style === 'line' ? 'line' : 'fill' })) : d.ornaments),
     images: (Array.isArray(o.images) ? o.images : []).filter(x => x && x.src).map((x, i) => Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (i + 1) }, x)),
     laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {},
-    hole: Object.assign({ on: false, x: 500, y: 150, d: 4 }, o.hole && typeof o.hole === 'object' ? o.hole : {}) };
+    hole: Object.assign({ on: false, x: 500, y: 150, d: 4 }, o.hole && typeof o.hole === 'object' ? o.hole : {}),
+    imports: Array.isArray(o.imports) ? o.imports.filter(x => x && (x.d || x.dMm)).map(x => ({ id: x.id || uid(), name: x.name || 'Imported line', role: x.role || 'etch', d: x.d || x.dMm, closed: !!x.closed })) : [] };
   st.hole.on = !!st.hole.on; st.hole.x = +st.hole.x || C; st.hole.y = +st.hole.y || 150; st.hole.d = +st.hole.d > 0 ? +st.hole.d : 4;
   for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart', 'aus', 'auss'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
   if (!(Array.isArray(o.images) && o.images.some(x => x && x.src))) { // older projects: centre picture -> image layer 1, background picture -> image layer 2
@@ -1069,7 +1080,9 @@ $('exportBtn').addEventListener('click', async () => {
 $('saveProj').onclick = () => download(new Blob([JSON.stringify({ app: 'wayland-forge', version: 1, state: S }, null, 1)], { type: 'application/json' }), (designName() ? fileBase() : 'MyBadge') + ' project.json');
 $('loadProj').addEventListener('change', async e => {
   const file = e.target.files[0]; if (!file) return; e.target.value = '';
-  try { const j = JSON.parse(await file.text()); if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project');
+  try { const text = await file.text(), j = JSON.parse(text);
+    if (window.WD && WD.isDesign(j)) { await openWaylandInForge(j); return; }
+    if (!j.state || !Array.isArray(j.state.layers)) throw new Error('Not a Wayland Forge project or Wayland design file');
     saveNow(); openState(j.state, null); // always full reset (state, sel, undo, caches) so phone does not need a reopen
   } catch (err) { alert('Could not load project: ' + err.message); }
 });
@@ -1147,6 +1160,7 @@ function laserItems() {
   const z = x => x.im ? (x.im.behind ? 0 : 2) : x.part === 'fill' && !x.sh.base.fillAbove ? 1 : x.part === 'fill' ? 3 : 4; // same stacking as the design
   for (const L of S.layers) if (L.free && L.text) it.push({ key: 't:' + L.id, name: 'Free text: ' + L.text, def: 'etch' });
   if (window.FR) S.images.filter(im => im.src && im.visible !== false && FR.on(im)).forEach(im => it.push({ key: 'frm:' + im.id, name: (im.name || 'Image') + ' – frame line', def: 'off' })); // v53: off (Skip) unless chosen
+  (S.imports || []).forEach(im => it.push({ key: 'imp:' + im.id, import: im, name: im.name || 'Imported line', def: im.role === 'cut-outer' ? 'cutout' : im.role === 'cut-inner' ? 'cutin' : im.role === 'etch' ? 'etch' : 'off' }));
   return it.map((x, i) => [x, i]).sort((p, q) => z(p[0]) - z(q[0]) || p[1] - q[1]).map(p => p[0]);
 }
 const roleOf = it => S.laser[it.key] || it.def;
@@ -1161,6 +1175,11 @@ function imgBox(im) { const a = imgAspect(im), w = a >= 1 ? im.size : im.size * 
 // Markup (artwork units) for one item. kind: 'pic' (as it looks), 'fill' (solid black shapes), 'cutout' / 'cutin' (outline paths, no style).
 function laserPart(it, kind) { const sh = it.sh || imgShape(); const r = withShape(sh, () => laserPart0(it, kind)); return it.sh ? wrapSh(sh, r) : r; }
 function laserPart0(it, kind) {
+  if (it.import || (it.key && String(it.key).indexOf('imp:') === 0)) {
+    const im = it.import || (S.imports || []).find(x => ('imp:' + x.id) === it.key); if (!im) return '';
+    const W = +($('lzW') || {}).value || 100, H = +($('lzH') || {}).value || 100, P = lzPage(W, H);
+    return '<g transform="translate(' + f2(P.vx) + ' ' + f2(P.vy) + ') scale(' + (+P.k.toFixed(6)) + ')"><path d="' + (im.dMm || im.d) + '"/></g>';
+  }
   const b = SB(), k = it.part || it.key, cut = kind === 'cutout' || kind === 'cutin';
   if (k === 'outer' || k === 'inner') {
     const d0 = k === 'outer' ? 0 : -b.gap, w = b.width / 2;
@@ -1512,8 +1531,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v53';
-const WHATS_NEW = "v53: New Image frame. In Image layers › Placement choose \"Inside my own frame\": a separate shape (oval, rectangle, rounded or your path shape) that trims the picture. Drag its dots to bend it, the side squares to stretch it, the ⟳ to turn it, or type the size. Pull it in to clear letters that sit outside the path. The frame is not burned unless you choose to etch or cut it. Laser files are unchanged unless you use a frame. v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
+const APP_VERSION = 'v54';
+const WHATS_NEW = "v54: Save as Wayland design – a file Waylands Path can open too. Send to Waylands Path still works as before. A saved copy of v53 is kept if you need to go back. Your usual Export buttons are unchanged. v53: New Image frame. In Image layers › Placement choose \"Inside my own frame\": a separate shape (oval, rectangle, rounded or your path shape) that trims the picture. Drag its dots to bend it, the side squares to stretch it, the ⟳ to turn it, or type the size. Pull it in to clear letters that sit outside the path. The frame is not burned unless you choose to etch or cut it. Laser files are unchanged unless you use a frame. v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1689,14 +1708,64 @@ async function pathArt() { await imgReady();
   return { svg: lzSVG(W, H, body, designName() || 'Wayland Forge design'), W, H, photos, name: designName() || 'Forge design' }; }
 async function sendToPath() { let a; try { a = await pathArt(); } catch (e) { toast(e.message); return; }
   if (!confirm(`Open this design in Waylands Path to edit the lines?\n\n• It opens there as a new project, ${f2(a.W)} × ${f2(a.H)} mm page.\n• Letters arrive as outlines (a line round each letter), not single lines.${a.photos ? `\n• ${a.photos} photo${a.photos > 1 ? 's stay' : ' stays'} in Forge (Waylands Path works with lines).` : ''}\n• Your design here in Forge is kept just as it is.`)) return;
-  try { saveNow(); await sharePut('toPath', { v: 1, from: 'wayland-forge', name: a.name, svg: a.svg, W: a.W, H: a.H, photos: a.photos, t: Date.now() }); }
+  let design = null; try { design = WD.fromForge(S, { W: a.W, H: a.H, name: a.name, version: APP_VERSION, svg: a.svg, photos: a.photos, items: [] }); } catch (e) { design = null; }
+  try { saveNow(); await sharePut('toPath', { v: 2, from: 'wayland-forge', name: a.name, svg: a.svg, design, W: a.W, H: a.H, photos: a.photos, t: Date.now() }); }
   catch (e) { toast('Could not hand the design over: ' + (e.message || e)); return; }
   location.href = new URL('../waylands-path/?from=forge', location.href).href; }
 document.querySelectorAll('[data-topath]').forEach(b => b.addEventListener('click', sendToPath));
+  ['wdSave','wdSave2'].forEach(id => { const el = $(id); if (el) el.addEventListener('click', () => saveWaylandDesign().catch(e => toast(e.message || String(e)))); });
+
+async function saveWaylandDesign() {
+  let art = null; try { art = await pathArt(); } catch (e) { art = null; }
+  const W = art ? art.W : +($('lzW') || {}).value || 100, H = art ? art.H : +($('lzH') || {}).value || 100;
+  const doc = WD.fromForge(S, { W, H, name: designName() || 'Untitled', version: APP_VERSION, svg: art && art.svg, photos: art && art.photos, items: [] });
+  const blob = new Blob([WD.stringify(doc)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = WD.fileName(doc); a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast('Saved ' + WD.fileName(doc));
+}
+async function openWaylandInForge(doc) {
+  const r = WD.toForge(doc);
+  if (r.kind === 'project' && r.state) { saveNow(); openState(r.state, null); toast('Opened Wayland design'); return; }
+  saveNow();
+  const st = defaults(); st.name = r.name || 'Untitled'; st.layers = []; st.ornaments = [];
+  if (st.shapes && st.shapes[0] && st.shapes[0].base) { st.shapes[0].base.outer = false; st.shapes[0].base.inner = false; }
+  st.imports = (r.imports || []).map(im => ({ id: im.id || uid(), name: im.name || 'Imported line', role: im.role || 'etch', d: im.d, dMm: im.d, closed: !!im.closed }));
+  openState(st, null);
+  const w = (r.artboard && r.artboard.width) || 100, h = (r.artboard && r.artboard.height) || 100;
+  if ($('lzW')) $('lzW').value = w; if ($('lzH')) $('lzH').value = h;
+  if ($('exW')) $('exW').value = w; if ($('exH')) $('exH').value = h;
+  toast('Opened Wayland design as lines. Your usual Export still works.');
+}
+async function shareGet(key) {
+  const db = await shareDb();
+  try { return await new Promise((ok, no) => { const tx = db.transaction('x', 'readonly'); const q = tx.objectStore('x').get(key); tx.oncomplete = () => ok(q.result); tx.onerror = () => no(tx.error); }); }
+  finally { db.close(); }
+}
+async function shareDel(key) {
+  const db = await shareDb();
+  try { await new Promise((ok, no) => { const tx = db.transaction('x', 'readwrite'); tx.objectStore('x').delete(key); tx.oncomplete = ok; tx.onerror = () => no(tx.error); }); }
+  finally { db.close(); }
+}
+let pendingPath = null;
+async function checkPath() {
+  let rec = null; try { rec = await shareGet('toForge'); } catch (e) { return; }
+  if (!rec || !rec.design) return;
+  pendingPath = rec;
+  const openIt = async () => { const d = pendingPath && pendingPath.design; pendingPath = null; try { await shareDel('toForge'); } catch (e) {} if (d) await openWaylandInForge(d); };
+  if (/[?&]from=path\b/.test(location.search)) { try { history.replaceState(null, '', location.pathname); } catch (e) {} await openIt(); return; }
+  const dlg = $('fromPathDlg'), note = $('fromPathNote');
+  if (note) note.textContent = (rec.name || 'A design') + ' is waiting from Waylands Path. Open it here? Your current Forge design is saved first.';
+  if (dlg && dlg.showModal) dlg.showModal(); else if (confirm('Open the design from Waylands Path?')) await openIt();
+  if ($('fromPathOk')) $('fromPathOk').onclick = async () => { if (dlg && dlg.close) dlg.close(); await openIt(); };
+  if ($('fromPathDrop')) $('fromPathDrop').onclick = async () => { if (dlg && dlg.close) dlg.close(); pendingPath = null; try { await shareDel('toForge'); } catch (e) {} };
+}
+
 window.FR = window.FRmake ? window.FRmake({ get S() { return S; }, get sel() { return sel; }, get view() { return view; }, stage, render, update, commit, IM, imgAspect, mmPerArt, pathSamples, clipShapeOf, toast }) : null; if (window.FR) FR.init(); // v53 image frame
-window.WF = { pathArt, sendToPath, get FR() { return window.FR; }, IM: () => IM(), laserSteps, mmPerArt: () => mmPerArt(), render: () => render(), commit: () => commit(), loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
+window.WF = { pathArt, sendToPath, saveWaylandDesign, openWaylandInForge, get FR() { return window.FR; }, IM: () => IM(), laserSteps, mmPerArt: () => mmPerArt(), render: () => render(), commit: () => commit(), loadImageLink: u => loadImageLink(u), showHome, closeHome, openState, newDesign: () => $('homeNew').click(), get projId() { return projId; }, openSec: id => openSec(id), setSnap: n => setSnap(n), isSheet: () => isSheet(), fitView: () => fitView(), fitInside, fillInner, get sel() { return sel; }, mode, procImage, get state() { return S; }, set state(v) { S = sanitize(v); geoCache.key = ''; fixSel(); update(); commit(); }, exportSVG, layoutLayer, buildArt, curShape, doExport, update, maxInnerGap, laserPack, laserItems, selectRail, renderLayerRail };
 (async () => {
   await kvLoad(); migrateProjs();
+  setTimeout(() => checkPath().catch(e => console.warn(e)), 80);
   await Promise.all(FONTS.map(async ([name, file]) => { const buf = window.WF_FONTS ? Uint8Array.from(atob(window.WF_FONTS[file]), c => c.charCodeAt(0)).buffer : await (await fetch('fonts/' + file)).arrayBuffer(); fonts[name] = opentype.parse(buf); try { const ff = new FontFace('WF ' + name, buf.slice(0)); document.fonts.add(ff); ff.load(); } catch (e) { /* preview only */ } }));
   // start on the home screen; projects open only from Projects
   $('loading').remove(); update(); commit();

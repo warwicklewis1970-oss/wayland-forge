@@ -34,6 +34,14 @@ Once opened, it works offline. Your designs autosave in the browser. To keep a c
 ## Laser pack (LaserGRBL)
 Open **Laser (LaserGRBL)**, give each part a job (Image, Etch, Cut inside edge, Cut outside edge or Skip), type the real size in mm and download the steps. Every file is the same mm page anchored at the laser's 0,0. Letters, ornaments (filled or hollow) and cuts are SVG, which LaserGRBL positions from the page itself, so they always line up: File > Open File > speed and power > Create!. Photo and filled letters are ready-to-run G-code (.nc) with mode, power and speed set in the app (Burn settings: Mode, Power %, Speed per step, no materials): File > Open File > Start, nothing to size or offset (PNG pictures remain as a setting).
 
+## v54 - Wayland design file, and a saved copy of v53
+
+**💾 Save as Wayland design** (on the Export and Laser sheets) writes a `.wayland.json` file that Waylands Path can open. **✏️ Send to Waylands Path** still works as before, and also attaches that file so a newer Path can use it. **Download file**, **Load…** and **Export** are unchanged. Load… also opens a Wayland design (lettering comes back if the file was saved from Forge; lines from Path arrive as imported lines).
+
+A saved copy of v53 stays at https://warwicklewis1970-oss.github.io/wayland-forge/v53/ (and as a GitHub release zip) if you ever need to go back.
+
+**No laser changes** unless you open a new imported design and include those lines in a burn. Existing projects export exactly as in v53.
+
 ## v53 - Image frame
 
 Image layers › Placement › **Inside my own frame (a shape you adjust)** gives a picture its own frame, separate from the text path. Start from an Oval, Rectangle, Rounded rectangle or your Path shape, then on the picture: drag inside to move it, drag a dot to bend it, side squares stretch one way, corner squares resize, ⟳ turns it. Or type Width / Height mm and Turn °. + Add point, − Remove point, Make corner / smooth, All smooth / All corners, Centre on picture, ↺ Reset frame. The picture (screen, SVG, PDF and laser image steps) is trimmed to the frame. The frame line itself is **not burned** unless you choose Etch or Cut under "Frame line on the laser" (also listed in the Laser list as "… – frame line", Skip by default). Laser files are unchanged unless a frame is used.

@@ -1,7 +1,7 @@
 // Wayland Forge service worker: cache everything for offline use.
-const VERSION = 'wayland-forge-v53';
+const VERSION = 'wayland-forge-v54';
 const ASSETS = [
-  './', './index.html', './style.css', './js/frame.js', './js/app.js', './js/blacksmith.js', './js/tour.js', './manifest.webmanifest',
+  './', './index.html', './style.css', './js/wayland-design.js', './js/frame.js', './js/app.js', './js/blacksmith.js', './js/tour.js', './manifest.webmanifest',
   './vendor/opentype.min.js', './vendor/jspdf.umd.min.js', './vendor/svg2pdf.umd.min.js', './vendor/imagetracer.js',
   './icons/anvil.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png',
   "./fonts/MountainsofChristmas-Bold-sub.ttf",
@@ -34,6 +34,7 @@ self.addEventListener('fetch', e => {
   const u = new URL(req.url);
   // never touch Google sign-in / Drive traffic (and anything else off-site)
   if (req.method !== 'GET' || u.origin !== location.origin || /(^|\.)(google\.com|googleapis\.com|gstatic\.com)$/.test(u.hostname)) return;
+  if (/\/v[\d.]+(\/|$)/.test(u.pathname)) return; // frozen fallback copies have their own service worker
   e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
     if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
     return res;

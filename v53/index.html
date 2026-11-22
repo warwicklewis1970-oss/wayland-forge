@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wayland Forge</title>
+<meta name="theme-color" content="#1d1a17">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/anvil.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="home">
+<div id="fbBar" style="position:sticky;top:0;z-index:9999;background:#134e4a;color:#fff;padding:8px 12px;font:15px/1.35 system-ui,sans-serif;text-align:center;">Saved copy of <b>Wayland Forge v53</b>. The latest app is <a href="https://warwicklewis1970-oss.github.io/wayland-forge/" style="color:#fff;text-decoration:underline;">here</a>.</div>
+
+<div id="home">
+  <div class="hcard">
+    <div class="hlogo"><img src="icons/anvil.svg" alt="" class="hanvil"><span id="homeSmith"></span></div>
+    <h1 class="htitle">Wayland Forge</h1>
+    <div class="hsub">Badges with text on a path · print, Printify &amp; laser</div>
+    <div id="homeMain" class="hbtns">
+      <button id="homeNew" class="hb primary">✚ New design</button>
+      <button id="homeProjects" class="hb">📂 Projects</button>
+      <button id="homeTour" class="hb">▶ Tutorial</button>
+    </div>
+    <div class="hver" id="homeVer"></div>
+    <div class="hnews" id="homeNewsWrap" hidden><div class="hnrow"><button id="homeNewsTap" class="hntap"></button><button id="homeNewsX" class="hnx" aria-label="Dismiss">✕</button></div><div id="homeNewsBody" class="hnbody" hidden><div id="homeNews"></div><button id="homeNewsClose" class="hnclose">Close</button></div></div>
+    <div id="homeProjs" hidden>
+      <div class="row hph"><button id="homeBack">← Back</button><b class="grow">Projects</b><label class="filebtn">Open file…<input type="file" id="homeLoad" accept=".json,application/json" hidden></label></div>
+      <div id="syncBox" class="syncbox"><span id="syncStatus" class="syncst"></span><button id="syncConnect">☁ Connect Google Drive</button><button id="syncNow" hidden>Sync now</button><button id="projDedupe" title="Remove projects that are exact copies">🧹 Remove duplicates</button></div>
+      <ul id="projList"></ul>
+      <div class="hint">Drive sync sends your named, saved projects. Last session stays on this device until you open it and Save to Projects.</div>
+    </div>
+  </div>
+</div>
+<div id="updBar" hidden><span>New version ready <small id="updNews"></small></span><button id="updBtn">Tap to update</button></div>
+<header>
+  <img src="icons/anvil.svg" alt="" class="logo"><button id="homeBtn" title="Home: start screen (your work is kept)" aria-label="Home">⌂</button><button id="projectsBtn" class="projectnav" title="Open your saved projects. Your current design is autosaved first." aria-label="Projects: change project">📂<span class="projectnavtext"> Projects</span></button><button id="helpBtn" title="Help &amp; tutorial (Wayland the blacksmith)" aria-label="Help and tutorial"></button><h1>Wayland Forge</h1><button id="nameBtn" class="namebtn">Untitled ✎</button>
+  <div class="spacer"></div>
+  <button id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="tl"> Undo</span></button>
+  <button id="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷<span class="tl"> Redo</span></button>
+  <button id="multiBtn" class="multitog" aria-pressed="false" title="Multi-select: plain clicks/taps add or remove letters (or hold Shift/Ctrl/⌘)">✚<span class="tl"> Multi-select</span></button>
+  <span id="selCount" class="badge" hidden></span>
+  <button id="dragMode" title="What dragging empty space does: box-select letters or pan the view (middle-drag or Space-drag always pans)">▭<span class="tl"> Box</span></button>
+  <button id="fitBtn" title="Reset view" aria-label="Fit view">⤢<span class="tl"> Fit</span></button>
+  <button id="quickExport" class="accent" title="Export with the settings in the Export section">⬇<span class="tl"> Export</span></button>
+  <button id="installBtn" class="accent" hidden title="Install as an app">⊕<span class="tl"> Install</span></button>
+  <button id="panelToggle" class="mobile-only" aria-expanded="false" title="Show controls">☰</button>
+</header>
+<main>
+  <section id="stageWrap">
+    <div id="layerRail" aria-label="Layers">
+      <div id="layerRailCount" class="lrcount"></div>
+      <div id="layerRailTrack" class="lrtrack" role="list"></div>
+      <button type="button" id="railAddText" class="lradd" title="Add more text on the current shape (no new outline or cut)">＋ Text</button>
+    </div>
+    <svg id="stage" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"></svg>
+    <div class="stagehint">Tap a layer chip above to switch · letters: tap the glyph · empty space deselects · box-drag or Multi-select to add</div>
+    <div id="loading">Loading fonts…</div>
+  </section>
+  <aside id="panel" data-snap="small">
+    <div id="sheetHandle" role="button" tabindex="0" aria-label="Resize controls (tap to cycle sizes)"><span>Controls</span></div>
+    <div id="layerBar">
+      <div class="row"><b class="lbt">Layers</b><select id="shapeSel" class="grow" aria-label="Active layer (top of list = in front)"></select><button id="shapeVis" class="mini2" title="Show or hide this layer">Hide</button></div>
+      <div id="addPicMenu" class="picmenu" hidden><b>Add which kind of image layer?</b><button data-addpic="1">🐶 Picture in the design<small>sits inside your shape (logo, pet, photo)</small></button><button data-addpic="2">🗺 Background / map<small>sits behind everything</small></button><button data-addpic="0" class="mini">Cancel</button></div>
+      <div class="row lbb"><select id="addShape" aria-label="Add shape layer"><option value="">+ Add shape (new outline)</option><option value="circle">Circle</option><option value="halfcircle">Half circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia (detailed)</option><option value="auss">Australia (smooth, for text)</option></select><button id="shapeDup" title="Duplicate layer">Copy</button><button id="shapeRen" title="Rename layer">✎</button><button id="shapeUp" title="Bring forward">↑</button><button id="shapeDown" title="Send back">↓</button><button id="shapeDel" class="danger" title="Delete layer">✕</button></div>
+      <div class="row"><button id="addTextBtn" class="accent grow" title="Add more text on the current shape - no new outline or cut">T + Add text</button></div>
+      <div class="row"><button id="addPicBtn" class="accent addpic grow" title="Add an image layer (picture, logo or map)">🖼 + Add image layer</button></div>
+    </div>
+    <details name="acc" id="sec-shape"><summary>Shape &amp; position</summary><div class="body">
+      <label class="rg"><span>Move X</span><input type="range" min="-500" max="500" step="1" data-b="shape.x"><output></output></label>
+      <label class="rg"><span>Move Y</span><input type="range" min="-500" max="500" step="1" data-b="shape.y"><output></output></label>
+      <label class="rg"><span>Scale</span><input type="range" min="0.2" max="1.5" step="0.01" data-b="shape.scale"><output></output></label>
+      <label class="rg"><span>Turn</span><input type="range" min="-180" max="180" step="1" data-b="shape.rot"><output></output></label>
+      <div class="row"><button id="shapeCentre" class="grow">Centre this layer</button></div>
+      <div class="g2">
+        <label><span>Type</span><select data-b="base.shape"><option value="circle">Circle</option><option value="ellipse">Ellipse</option><option value="polygon">Polygon</option><option value="star">Star</option><option value="heart">Heart</option><option value="aus">Australia (detailed)</option><option value="auss">Australia (smooth, for text)</option></select></label>
+        <div class="checks"><label class="chk"><input type="checkbox" data-b="base.outer">Outer</label><label class="chk"><input type="checkbox" data-b="base.inner">Inner</label></div>
+      </div>
+      <label class="rg"><span>Width</span><input type="range" min="150" max="470" step="1" data-b="base.rx"><output></output></label>
+      <label class="rg" data-shapes="ellipse polygon star heart aus"><span>Height</span><input type="range" min="150" max="470" step="1" data-b="base.ry"><output></output></label>
+      <label class="rg" data-shapes="polygon"><span>Sides</span><input type="range" min="3" max="12" step="1" data-b="base.sides"><output></output></label>
+      <label class="rg" data-shapes="star"><span>Points</span><input type="range" min="3" max="12" step="1" data-b="base.points"><output></output></label>
+      <label class="rg" data-shapes="star"><span>Inner depth</span><input type="range" min="0.25" max="0.9" step="0.01" data-b="base.innerRatio"><output></output></label>
+      <label class="rg" data-shapes="heart"><span>Dip depth</span><input type="range" min="0" max="1" step="0.01" data-b="base.dip"><output></output></label>
+      <label class="rg" data-shapes="polygon star heart aus"><span>Corners</span><input type="range" min="0" max="120" step="1" data-b="base.corner"><output></output></label>
+      <label class="rg" data-shapes="polygon star heart aus" title="Rounds the path letters follow at points and dips; printed lines keep Corners"><span>Text smooth</span><input type="range" min="0" max="250" step="1" data-b="base.smooth"><output></output></label>
+      <label class="rg"><span>Ring gap</span><input type="range" min="40" max="250" step="1" data-b="base.gap"><output></output></label>
+      <div id="gapWarn" class="hint" hidden></div>
+      <label class="rg"><span>Line width</span><input type="range" min="0" max="30" step="1" data-b="base.width"><output></output></label>
+      <div class="g2">
+        <label><span>Line</span><input type="color" data-b="base.stroke" class="col"></label>
+        <label class="chk"><input type="checkbox" data-b="base.fillOn">Fill <input type="color" data-b="base.fill" class="col"></label>
+        <label class="chk"><input type="checkbox" data-b="base.fillAbove">Fill on top of picture <span class="dim">(e.g. a band behind your text)</span></label>
+      </div>
+      <label class="chk"><input type="checkbox" id="trimOn">Trim with straight line</label>
+      <div id="trimFields" hidden>
+        <div class="hint">Cuts the shape with a straight through-line. The edge you cut off becomes a straight side of the piece, and the outside laser cut follows that closed outline.</div>
+        <div class="row"><button type="button" data-trim="bottom" class="grow">Flat bottom</button><button type="button" data-trim="top" class="grow">Flat top</button><button type="button" data-trim="left" class="grow">Flat left</button><button type="button" data-trim="right" class="grow">Flat right</button></div>
+        <label class="rg"><span>Angle</span><input type="range" id="trimAng" min="-180" max="180" step="1" value="0"><output id="trimAngOut">0°</output></label>
+        <label class="rg"><span>Position</span><input type="range" id="trimPos" min="-80" max="80" step="1" value="0"><output id="trimPosOut">0%</output></label>
+        <div class="hint" id="trimPosHint">0 = through the centre (a half-circle on a circle). Positive moves the line toward the side you keep (you keep less); negative keeps more than half.</div>
+        <div class="row"><label class="grow"><span>Keep</span><select id="trimKeep"><option value="1">This side</option><option value="-1">The other side</option></select></label><button type="button" id="trimFlip" class="grow">Flip side</button></div>
+        <div id="trimWarn" class="hint" hidden></div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-text"><summary>Text on this layer</summary><div class="body">
+      <div class="row"><select id="layerSel" class="grow" aria-label="Text layer"></select><button id="addLayer" title="Add curved text that follows the current shape">+ Curved text</button><button id="addFreeLayer" class="accent" title="Add straight text you can place anywhere">+ Straight text</button></div>
+      <div class="hint">Adds another line of text on this shape. No new outline or laser cut is made.</div>
+      <div id="layerFields">
+        <label class="full"><span>Text</span><input type="text" data-b="layer.text" maxlength="80"></label>
+        <div class="g2">
+          <label><span>Font</span><select data-b="layer.font" id="fontSel"></select></label>
+          <label><span>Colour</span><input type="color" data-b="layer.color" class="col"></label>
+          <label><span>Letters</span><select data-b="layer.style"><option value="fill">Fill (solid)</option><option value="hollow">Hollow (outline)</option></select></label>
+          <label id="freeSideRow"><span>Side</span><select data-b="layer.side"><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+          <label id="freeRingRow"><span>Sits</span><select data-b="layer.ring"><option value="between">Between lines</option><option value="outer">Outside outer</option><option value="inner">Inside inner</option></select></label>
+        </div>
+        <label class="rg"><span>Size</span><input type="range" min="16" max="200" step="1" data-b="layer.size"><output></output></label>
+        <label class="rg" id="layerRotateRow"><span>Rotate</span><input type="range" min="-180" max="180" step="1" data-b="layer.offset"><output></output></label>
+        <label class="rg"><span>Spacing</span><input type="range" min="-20" max="80" step="1" data-b="layer.spacing"><output></output></label>
+        <label class="rg" id="freeRotateRow" hidden><span>Rotate</span><input type="range" min="-180" max="180" step="1" data-b="layer.rot"><output></output></label>
+        <label class="rg" id="layerLiftRow"><span>Lift</span><input type="range" min="-80" max="80" step="1" data-b="layer.lift"><output></output></label>
+        <div id="freeTextControls" hidden>
+          <div class="hint">Straight text: not attached to a shape. Drag its letters to move it.</div>
+          <label class="rg"><span>Move X</span><input type="range" min="0" max="1000" step="1" data-b="layer.x"><output></output></label>
+          <label class="rg"><span>Move Y</span><input type="range" min="0" max="1000" step="1" data-b="layer.y"><output></output></label>
+        </div>
+        <div class="row"><button id="dupOpp" class="grow">Duplicate to opposite side</button><button id="centreFree" class="grow" hidden>Centre text</button><button id="delLayer" class="danger">Delete</button></div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-img"><summary>🖼 Image layers</summary><div class="body">
+      <div class="row"><b class="lbt">Image layers</b><select id="imgSel" class="grow" aria-label="Active image layer (top of list = in front)"></select></div>
+      <div class="row lbb"><button class="accent grow addpic2" data-addpicopen="1">🖼 + Add image layer</button><button id="imgRen" title="Rename image layer">✎</button><button id="imgUp" title="Bring forward">↑</button><button id="imgDown" title="Send back">↓</button><button id="delImg" class="danger" title="Delete image layer">✕</button></div>
+      <label><span>Depth</span><select id="imgDepth"><option value="front">In the design (above shape fills)</option><option value="behind">Behind everything (map / backdrop)</option></select></label>
+      <p class="hint" id="imgSlotHint"></p>
+      <div class="row" id="imgUploadRow"><label class="filebtn grow">Upload / replace picture…<input type="file" id="imgFile" accept="image/*" hidden></label><button id="imgLink" title="Load a PNG or SVG from a web link">Load from link…</button><button id="centreImg">Centre</button></div>
+      <div id="imgFields">
+        <label class="rg"><span>Size</span><input type="range" min="40" max="1600" step="1" data-b="img.size"><output></output></label>
+        <label id="imgClipRow"><span>Placement</span><select data-b="img.clipMode"><option value="clip">Inside path (to inside edge of line)</option><option value="clipout">Inside, to outside edge of line</option><option value="outside">Outside path only</option><option value="outin">Outside, from inside edge (runs under line)</option><option value="frame">Inside my own frame (a shape you adjust)</option><option value="free">Free – no clipping</option></select></label>
+        <label><span>Path</span><select id="imgClipLine"></select></label>
+        <div id="imgFrameBox" class="frbox" hidden>
+          <p class="hint"><b>Image frame:</b> a separate shape that trims this picture. Pull it in to keep the picture off the letters, even letters pushed outside the path. It is <b>not burned</b> unless you choose that below.</p>
+          <div class="frst"><span>Start shape</span><button data-frstart="oval">◯ Oval</button><button data-frstart="rect">▭ Rectangle</button><button data-frstart="round">▢ Rounded</button><button data-frstart="path">⬭ Path shape</button></div>
+          <button id="frEdit" class="wide accent">✎ Edit frame on the picture</button>
+          <div id="frEditRows">
+            <p class="hint">Drag inside the frame to move it · drag a dot to bend it · side squares stretch it · corner squares resize it · ⟳ turns it.</p>
+            <div class="g3 frnum"><label>Width mm<input type="number" id="frW" inputmode="decimal" min="1" step="0.5"></label><label>Height mm<input type="number" id="frH" inputmode="decimal" min="1" step="0.5"></label><label>Turn °<input type="number" id="frRot" inputmode="decimal" min="-360" max="360" step="1"></label></div>
+            <div class="frbtns"><button id="frAdd">+ Add point</button><button id="frDel">− Remove point</button><button id="frSmooth">⌃ Make corner</button></div>
+            <div class="frbtns"><button id="frAllSmooth">All smooth</button><button id="frAllCorner">All corners</button><button id="frCentre">Centre on picture</button></div>
+          </div>
+          <button id="frReset" class="wide">↺ Reset frame (back to its start shape)</button>
+          <label class="chk"><input type="checkbox" id="frShow">Show the frame line on screen (screen only)</label>
+          <label><span>Frame line on the laser</span><select id="frBurn"><option value="off">Not burned – only trims the picture</option><option value="etch">Etch the frame line</option><option value="cutin">Cut along the frame (inside cut)</option><option value="cutout">Cut along the frame (outside cut, last)</option></select></label>
+          <p class="hint" id="frBurnHint"></p>
+        </div>
+        <div class="row"><button id="fitImg" class="grow" title="Scale and centre so the whole image sits inside the inner line">⤢ Fit inside line</button><button id="fillImg" class="grow" title="Scale to cover the inner shape and clip it to the line">◉ Fill &amp; clip</button></div>
+        <label><span>Style</span><select data-b="img.mode"><option value="orig">Original picture</option><option value="sil">Silhouette (solid cutout)</option><option value="trace">Vector trace (SVG paths)</option></select></label>
+        <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.removeBg">Remove background (corner colour)</label>
+        <label class="rg" data-imgmodes="orig"><span>Tolerance</span><input type="range" min="5" max="200" step="1" data-b="img.tol"><output></output></label>
+        <label class="chk" data-imgmodes="orig"><input type="checkbox" data-b="img.flood">Only background touching the edges (keeps light parts of the subject)</label>
+        <label class="rg" data-imgmodes="orig"><span>Background to white</span><input type="range" min="150" max="255" step="1" data-b="img.whiteLvl"><output></output></label>
+        <div class="hint" data-imgmodes="orig">For laser photos: slide "Background to white" left until the grey background disappears (255 = off). Anything this light or lighter is not burnt.</div>
+        <div class="g2" data-imgmodes="sil trace">
+          <label><span>Background</span><select data-b="img.bgMode"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+          <label><span>Fill</span><input type="color" data-b="img.color" class="col"></label>
+        </div>
+        <label class="rg" data-imgmodes="sil trace"><span>Threshold</span><input type="range" min="10" max="245" step="1" data-b="img.threshold"><output></output></label>
+        <label class="rg" data-imgmodes="sil trace"><span>Smoothing</span><input type="range" min="0" max="5" step="1" data-b="img.smooth"><output></output></label>
+        <label class="chk" data-imgmodes="sil trace"><input type="checkbox" data-b="img.invert">Invert (negative cutout)</label>
+        <div class="hint" data-imgmodes="trace" id="traceInfo">Traced shapes export as true vector paths in SVG and PDF.</div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-letter"><summary>Letter edit</summary><div class="body">
+      <div class="row"><button id="multiBtn2" class="multitog grow" aria-pressed="false">✚ Multi-select: off</button><button id="selAll" class="grow">Select all in layer</button></div>
+      <div id="letterNone" class="hint">Click a letter to select it. Shift/Ctrl/⌘-click, or switch Multi-select on, to add or remove letters anywhere. You can also drag a box on empty space. Esc clears the selection.</div>
+      <div id="letterBox">
+        <div class="hint"><b id="letterName"></b> <button id="clearSel" class="mini">Clear</button></div>
+        <label class="rg"><span>Rotate ±</span><input type="range" min="-180" max="180" step="1" data-rel="rot"><output></output></label>
+        <label class="rg"><span>Scale ×</span><input type="range" min="0.3" max="2.5" step="0.05" data-rel="scale"><output></output></label>
+        <div class="row nudge"><span class="hint">Nudge</span><button data-nudge="-1,0">←</button><button data-nudge="0,-1">↑</button><button data-nudge="0,1">↓</button><button data-nudge="1,0">→</button></div>
+        <div class="row"><button id="resetLetter" class="grow">Reset selected</button><button id="resetLetters" class="grow">Reset layer</button></div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-orn"><summary>Ornaments</summary><div class="body">
+      <div class="row"><button id="addStar" class="grow">+ Star</button><button id="addDot" class="grow">+ Dot</button><button id="clearOrn" class="danger">Clear all</button></div>
+      <div class="row"><button id="addHolly1" class="grow">+ Holly</button><button id="addHolly2" class="grow">+ Holly ×2</button><button id="addNote" class="grow">+ ♪</button><button id="addNotes" class="grow">+ ♫</button></div>
+      <div class="row holebox"><label class="chk" title="A round hole to hang it, cut by the laser instead of drilled"><input type="checkbox" id="holeOn">Hanging hole</label><label><span>Ø mm</span><input type="number" id="holeD" inputmode="decimal" min="1" max="30" step="any" value="4" style="width:5em"></label><button id="holeSnap" class="grow" title="Centre it near the top, 5 mm in from the edge">Snap to top</button></div>
+      <div id="holeInfo" class="hint" hidden></div>
+      <div id="ornNone" class="hint">Click an ornament to edit it.</div>
+      <div id="ornFields">
+        <label class="chk" title="Stick it to a line of the badge and slide it round"><input type="checkbox" id="ornFollow">Follow path</label>
+        <div id="ornFree">
+          <label class="rg" title="Left / right"><span>Horizontal ↔</span><input type="range" min="-500" max="500" step="1" data-op="x"><output></output></label>
+          <label class="rg" title="Up / down"><span>Vertical ↕</span><input type="range" min="-500" max="500" step="1" data-op="y"><output></output></label>
+        </div>
+        <div id="ornPathF" hidden>
+          <div class="row"><label class="grow"><span>Path</span><select id="ornPath"><option value="outer">Outer line</option><option value="mid">Text line (middle)</option><option value="inner">Inner line</option></select></label><label><span>Layer</span><select id="ornShapeSel"></select></label></div>
+          <label class="rg" title="Slide it round the path (0 = top)"><span>Along path</span><input type="range" min="-180" max="180" step="0.5" data-op="t"><output></output></label>
+          <label class="rg" title="Move it outside (+) or inside (−) the line"><span>Offset in/out</span><input type="range" min="-150" max="150" step="1" data-op="off"><output></output></label>
+          <label class="chk"><input type="checkbox" id="ornTurn">Turn with path</label>
+        </div>
+        <label class="rg"><span>Size</span><input type="range" min="4" max="120" step="1" data-b="orn.r"><output></output></label>
+        <div class="row nudge"><span class="hint">Nudge</span><button data-onudge="-1,0">←</button><button data-onudge="0,-1">↑</button><button data-onudge="0,1">↓</button><button data-onudge="1,0">→</button><button id="centreOrn" class="mini" title="Put it in the middle">Centre</button></div>
+        <label class="rg" id="ornRotRow"><span>Rotation</span><input type="range" min="-180" max="180" step="1" data-b="orn.rot"><output></output></label>
+        <div class="row" id="ornWidthRow" hidden><label class="grow"><span>Outline width (mm)</span><input type="number" id="ornWidth" min="0.1" max="1.2" step="0.1" inputmode="decimal"></label><button id="ornWidthAll" title="Use this outline width on every Line (outline) ornament">Apply to all ornaments</button></div>
+        <div class="hint" id="ornWidthHint" hidden>0.6 mm is a modest start. This is artwork width, not a guaranteed burn width: laser spot and material change the result. Widened outlines use filled Line To Line bands, so they take longer than one outline pass. Extra width may close up small veins or berries; check preview and test scrap.</div>
+        <div class="row"><label class="grow"><span>Ornament</span><select data-b="orn.style"><option value="fill">Fill (solid)</option><option value="line">Line (outline)</option></select></label><button id="ornStyleAll" title="Set every ornament to this Fill/Line choice">Apply to all ornaments</button></div>
+        <div class="row"><label><span>Colour</span><input type="color" data-b="orn.color" class="col"></label><label id="ornBerry"><span>Berries</span><input type="color" data-b="orn.color2" class="col"></label><button id="mirrorOrn" class="grow">Mirror copy</button><button id="ornLink" class="grow" title="Linked: the mirror copy moves with this one. Tap to let them move separately">🔗 Unlink</button><button id="delOrn" class="danger">Delete</button></div>
+      </div>
+    </div></details>
+    <details name="acc" id="sec-col"><summary>Colours &amp; background</summary><div class="body">
+      <div class="g2">
+        <label><span>Background</span><select data-b="doc.bg"><option value="transparent">Transparent</option><option value="color">Solid</option></select></label>
+        <label><span>Colour</span><input type="color" data-b="doc.bgColor" class="col"></label>
+      </div>
+      <div id="swatches"></div>
+      <div class="row"><input type="color" id="swatchPick" value="#c0392b" class="col" aria-label="New swatch colour"><button id="addSwatch" class="grow">+ Save swatch</button></div>
+      <div class="hint">Click a swatch to colour the selected ornament or text layer.</div>
+    </div></details>
+    <details name="acc" id="sec-export"><summary>Export</summary><div class="body">
+      <div class="g2">
+        <label><span>Format</span><select id="exFmt"><option value="svg">SVG vector</option><option value="pdf">PDF vector</option><option value="png">PNG</option></select></label>
+        <label><span>Preset</span><select id="exPreset"><option value="">Custom</option><option value="printify">Printify 4500px</option><option value="100mm">100 mm</option><option value="4in">4 in</option><option value="a4">A4 page</option></select></label>
+      </div>
+      <div class="g3">
+        <label><span>W</span><input type="number" id="exW" value="100" min="1" step="0.5"></label>
+        <label><span>H</span><input type="number" id="exH" value="100" min="1" step="0.5"></label>
+        <label><span>Unit</span><select id="exUnit"><option value="mm">mm</option><option value="in">in</option></select></label>
+        <label><span>Bleed</span><input type="number" id="exBleed" value="0" min="0" step="0.5"></label>
+        <label><span>DPI</span><input type="number" id="exDpi" value="300" min="72" max="1200"></label>
+        <input type="checkbox" id="exPrintify" hidden>
+      </div>
+      <button id="exportBtn" class="accent wide">Export</button>
+      <button id="toPathBtn2" class="wide topath" data-topath="1">✏️ Send to Waylands Path <span class="dim">(edit the lines)</span></button>
+      <div id="exInfo" class="hint"></div>
+    </div></details>
+    <details name="acc" id="sec-laser"><summary>Laser (LaserGRBL)</summary><div class="body">
+      <div class="hint">Give each part a laser job. Every file in the pack uses the same page, so etch and cuts line up.</div>
+      <div id="laserList"></div>
+      <label class="chk"><input type="checkbox" id="laserPrev">Show cuts on the design <span class="dim">(red = outside, blue = inside)</span></label>
+      <div class="g3">
+        <label><span>W mm</span><input type="number" id="lzW" value="100" min="5" max="800" step="0.5"></label>
+        <label><span>H mm</span><input type="number" id="lzH" value="100" min="5" max="800" step="0.5"></label>
+        <label><span>Detail</span><select id="lzDpi"><option value="127">5 lines/mm</option><option value="254">10 lines/mm</option><option value="318" selected>12.5 lines/mm</option><option value="400">16 lines/mm</option></select></label>
+      </div>
+      <label><span>Letter etch file</span><select id="lzEtch"><option value="png" selected>Picture (Line To Line, default)</option><option value="svg">Lines (SVG)</option></select></label>
+      <label><span>Picture steps as</span><select id="lzPic"><option value="nc" selected>Ready-to-run G-code (.nc) – open and Start</option><option value="png">PNG picture (type W H X Y in LaserGRBL)</option></select></label>
+      <label><span>Line steps as</span><select id="lzLine"><option value="nc" selected>G-code (.nc) – open and Start</option><option value="svg">SVG (type speed and power in LaserGRBL)</option></select></label>
+      <label><span>Laser max S ($30)</span><input type="number" id="lzSmax" value="1000" min="1" max="100000" step="1"></label>
+      <label class="chk"><input type="checkbox" id="lzMarks">Tiny corner marks in every file <span class="dim">(only if LaserGRBL moves files)</span></label>
+      <dialog id="lzDlg" class="lzdlg"><h3>Burn settings</h3><div id="lzBurn" class="lzburn"></div><div class="lzbbtn"><button id="lzDlgCancel">Cancel</button><button id="lzDlgGo" class="accent">Export</button></div></dialog>
+      <button id="laserBtn" class="accent wide">⬇ Download all steps (separate files)</button>
+      <button id="laserZip" class="wide">Or download as one .zip</button>
+      <button id="toPathBtn" class="wide topath" data-topath="1">✏️ Send to Waylands Path <span class="dim">(edit the lines)</span></button>
+      <div id="lzInfo" class="hint"></div>
+      <div id="lzSteps" class="lzsteps" hidden></div>
+    </div></details>
+    <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
+      <div class="row"><button id="changeProjectBtn" class="accent wide">📂 Change project / open another…</button></div>
+      <div class="row"><button id="saveToProjects" class="grow">Save to Projects</button><button id="saveProj" class="grow">Download file</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
+      <div class="helpbox"><b>Help &amp; tutorial</b>
+        <div class="row"><button id="helpTour" class="grow">▶ Start the tour</button><button id="helpTopics" class="grow">Pick a topic…</button></div>
+        <label class="chk"><input type="checkbox" id="helpIconChk">Show the blacksmith help button in the toolbar</label>
+        <label class="chk"><input type="checkbox" id="helpTipsChk">Show tips (a short hint the first time you open each section)</label>
+      </div>
+      <div class="hint">To open a saved design, tap 📂 Projects above or Change project here. Your current design is saved first. Fonts: SIL Open Font License.</div>
+    </div></details>
+  </aside>
+</main>
+<script src="vendor/opentype.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/svg2pdf.umd.min.js"></script>
+<script src="vendor/imagetracer.js"></script>
+<script src="js/frame.js"></script>
+<script src="js/app.js"></script>
+<script src="js/blacksmith.js"></script>
+<script src="js/tour.js"></script>
+</body>
+</html>

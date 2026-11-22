@@ -24,7 +24,7 @@
     <div class="hver" id="homeVer"></div>
     <div class="hnews" id="homeNewsWrap" hidden><div class="hnrow"><button id="homeNewsTap" class="hntap"></button><button id="homeNewsX" class="hnx" aria-label="Dismiss">✕</button></div><div id="homeNewsBody" class="hnbody" hidden><div id="homeNews"></div><button id="homeNewsClose" class="hnclose">Close</button></div></div>
     <div id="homeProjs" hidden>
-      <div class="row hph"><button id="homeBack">← Back</button><b class="grow">Projects</b><label class="filebtn">Open file…<input type="file" id="homeLoad" accept=".json,application/json" hidden></label></div>
+      <div class="row hph"><button id="homeBack">← Back</button><b class="grow">Projects</b><label class="filebtn">Open file…<input type="file" id="homeLoad" accept=".json,.wayland.json,application/json" hidden></label></div>
       <div id="syncBox" class="syncbox"><span id="syncStatus" class="syncst"></span><button id="syncConnect">☁ Connect Google Drive</button><button id="syncNow" hidden>Sync now</button><button id="projDedupe" title="Remove projects that are exact copies">🧹 Remove duplicates</button></div>
       <ul id="projList"></ul>
       <div class="hint">Drive sync sends your named, saved projects. Last session stays on this device until you open it and Save to Projects.</div>
@@ -231,6 +231,7 @@
       </div>
       <button id="exportBtn" class="accent wide">Export</button>
       <button id="toPathBtn2" class="wide topath" data-topath="1">✏️ Send to Waylands Path <span class="dim">(edit the lines)</span></button>
+      <button id="wdSave2" class="wide">💾 Save as Wayland design</button>
       <div id="exInfo" class="hint"></div>
     </div></details>
     <details name="acc" id="sec-laser"><summary>Laser (LaserGRBL)</summary><div class="body">
@@ -251,12 +252,14 @@
       <button id="laserBtn" class="accent wide">⬇ Download all steps (separate files)</button>
       <button id="laserZip" class="wide">Or download as one .zip</button>
       <button id="toPathBtn" class="wide topath" data-topath="1">✏️ Send to Waylands Path <span class="dim">(edit the lines)</span></button>
+      <button id="wdSave" class="wide">💾 Save as Wayland design</button>
+      <div class="hint">A Wayland design is a file both apps can open. Send to Waylands Path still works as before (and keeps the old hand-off as a fallback). Your usual Export buttons stay as they are.</div>
       <div id="lzInfo" class="hint"></div>
       <div id="lzSteps" class="lzsteps" hidden></div>
     </div></details>
     <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
       <div class="row"><button id="changeProjectBtn" class="accent wide">📂 Change project / open another…</button></div>
-      <div class="row"><button id="saveToProjects" class="grow">Save to Projects</button><button id="saveProj" class="grow">Download file</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
+      <div class="row"><button id="saveToProjects" class="grow">Save to Projects</button><button id="saveProj" class="grow">Download file</button><label class="filebtn grow">Load…<input type="file" id="loadProj" accept=".json,.wayland.json,application/json" hidden></label><button id="newProj" class="danger">New</button></div>
       <div class="helpbox"><b>Help &amp; tutorial</b>
         <div class="row"><button id="helpTour" class="grow">▶ Start the tour</button><button id="helpTopics" class="grow">Pick a topic…</button></div>
         <label class="chk"><input type="checkbox" id="helpIconChk">Show the blacksmith help button in the toolbar</label>
@@ -270,9 +273,11 @@
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/svg2pdf.umd.min.js"></script>
 <script src="vendor/imagetracer.js"></script>
+<script src="js/wayland-design.js"></script>
 <script src="js/frame.js"></script>
 <script src="js/app.js"></script>
 <script src="js/blacksmith.js"></script>
 <script src="js/tour.js"></script>
+<dialog id="fromPathDlg" class="lzdlg"><h3>✏️ From Waylands Path</h3><div id="fromPathNote" class="hint"></div><div class="lzbbtn"><button id="fromPathDrop">Not now</button><button id="fromPathOk" class="accent">Open</button></div></dialog>
 </body>
 </html>
