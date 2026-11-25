@@ -473,7 +473,7 @@ function importArt() {
   const W = +($('lzW') || {}).value || 100, H = +($('lzH') || {}).value || 100, P = lzPage(W, H);
   const inner = (S.imports || []).map(im => {
     const cut = im.role === 'cut-outer' || im.role === 'cut-inner';
-    const sw = (im.strokeMm || 0.3) / (W > 0 ? Math.min(W, H) / ART : 1);
+    const sw = im.strokeMm || 0.3; // v56: the group below is already scaled mm -> artwork, so this is plain mm (was divided again = solid blobs)
     return '<path d="' + (im.dMm || im.d) + '" fill="none" stroke="' + (cut ? '#e03131' : '#1b1b1b') + '" stroke-width="' + f2(sw) + '" stroke-linejoin="round" stroke-linecap="round"/>';
   }).join('');
   return '<g data-wd="imports" transform="translate(' + f2(P.vx) + ' ' + f2(P.vy) + ') scale(' + (+P.k.toFixed(6)) + ')">' + inner + '</g>';
@@ -689,7 +689,7 @@ function sanitize(raw) {
     images: (Array.isArray(o.images) ? o.images : []).filter(x => x && x.src).map((x, i) => Object.assign(imgDefaults(), { id: uid(), name: 'Image ' + (i + 1) }, x)),
     laser: o.laser && typeof o.laser === 'object' ? Object.assign({}, o.laser) : {},
     hole: Object.assign({ on: false, x: 500, y: 150, d: 4 }, o.hole && typeof o.hole === 'object' ? o.hole : {}),
-    imports: Array.isArray(o.imports) ? o.imports.filter(x => x && (x.d || x.dMm)).map(x => ({ id: x.id || uid(), name: x.name || 'Imported line', role: x.role || 'etch', d: x.d || x.dMm, closed: !!x.closed })) : [] };
+    imports: Array.isArray(o.imports) ? o.imports.filter(x => x && (x.d || x.dMm)).map(x => ({ id: x.id || uid(), name: x.name || 'Imported line', role: x.role || 'etch', d: x.d || x.dMm, closed: !!x.closed, ...(+x.strokeMm > 0 ? { strokeMm: +x.strokeMm } : {}) })) : [] };
   st.hole.on = !!st.hole.on; st.hole.x = +st.hole.x || C; st.hole.y = +st.hole.y || 150; st.hole.d = +st.hole.d > 0 ? +st.hole.d : 4;
   for (const sh of st.shapes) { if (!['circle', 'ellipse', 'polygon', 'star', 'heart', 'aus', 'auss'].includes(sh.base.shape)) sh.base.shape = 'circle'; ['x', 'y', 'rot'].forEach(k => { sh[k] = +sh[k] || 0; }); sh.scale = +sh.scale || 1; }
   if (!(Array.isArray(o.images) && o.images.some(x => x && x.src))) { // older projects: centre picture -> image layer 1, background picture -> image layer 2
@@ -1116,7 +1116,10 @@ const panel = $('panel');
 // mobile sheet: snap points collapsed / small (~38%) / tall (~70%); stage re-fits above it
 const isSheet = () => matchMedia('(max-width:820px) and (orientation:portrait)').matches;
 const SNAPS = { collapsed: () => 34, small: () => innerHeight * 0.38, tall: () => innerHeight * 0.70 };
-function fitView() { view = { x: -40, y: -40, w: 1080, h: 1080 }; render(); }
+function fitView() { view = { x: -40, y: -40, w: 1080, h: 1080 };
+  // v56: a design brought in from Path can be a wide or tall page; Fit then shows the whole page (designs without imported lines: unchanged)
+  if (S.imports && S.imports.length) { const W = +($('lzW') || {}).value, H = +($('lzH') || {}).value; if (W >= 5 && H >= 5) { const P = lzPage(W, H), w = Math.max(1080, Math.max(P.vw, P.vh) + 80); view = { x: C - w / 2, y: C - w / 2, w, h: w }; } }
+  render(); }
 function setSnap(name) {
   panel.dataset.snap = name; panel.style.setProperty('--sheet', name === 'small' ? '38dvh' : name === 'tall' ? '70dvh' : '34px');
   if (name === 'collapsed') panel.scrollTop = 0;
@@ -1146,6 +1149,7 @@ $('panelToggle').onclick = () => setSheet(panel.dataset.snap === 'collapsed');
 
 // ---------- laser pack (LaserGRBL): one file per job, all on the same mm page ----------
 const ROLES = [['off', 'Skip'], ['image', 'Image (photo engrave)'], ['etch', 'Etch (fill)'], ['cutin', 'Cut inside edge'], ['cutout', 'Cut outside edge']];
+const ROLES_IMP = [['off', 'Skip'], ['etch', 'Etch (lines)'], ['etchfill', 'Etch (solid fill)'], ['cutin', 'Cut inside edge'], ['cutout', 'Cut outside edge']]; // v56: lines brought in from Path/Post burn as lines unless you pick solid fill
 function laserItems() {
   const it = [], many = S.shapes.length > 1;
   S.shapes.forEach((sh, i) => { if (sh.visible === false) return; const b = sh.base, pre = i ? sh.id + ':' : '', nm = many ? sh.name + ' – ' : '';
@@ -1350,7 +1354,7 @@ async function laserSteps() { await imgReady();
   if (!(W >= 5 && H >= 5)) throw new Error('Enter the size in mm.');
   const B = fileBase();
   const P = lzPage(W, H), hair = f2(0.1 * P.k), items = laserItems(), by = r => items.filter(it => roleOf(it) === r);
-  const imgItems = by('image'), etch = by('etch').flatMap(it => it.key !== 'orn' ? [it] : ['fill', 'line'].filter(y => S.ornaments.some(o => (o.style === 'line' ? 'line' : 'fill') === y)).map(y => ({ ...it, ornStyle: y }))), cin = by('cutin'), cout = by('cutout');
+  const imgItems = by('image'), etch = items.filter(it => roleOf(it) === 'etch' || roleOf(it) === 'etchfill').flatMap(it => it.key !== 'orn' ? [it] : ['fill', 'line'].filter(y => S.ornaments.some(o => (o.style === 'line' ? 'line' : 'fill') === y)).map(y => ({ ...it, ornStyle: y }))), cin = by('cutin'), cout = by('cutout');
   if (!imgItems.length && !etch.length && !cin.length && !cout.length) throw new Error('Every part is set to Skip.');
   const mk = st => marks ? lzMarks(P, st) : '', st = [], lpm = Math.round(dpi / 25.4 * 10) / 10, sz = `${f2(W)}x${f2(H)}mm`;
   const nm = l => l.map(x => x.name.replace(/^.* – /, '')).join(', ');
@@ -1366,7 +1370,7 @@ async function laserSteps() { await imgReady();
   if (imgItems.length && !nc) st.push({ kind: 'ENGRAVE', job: 'photo', what: 'photo', type: 'png', items: imgItems, crop: cPh, mode: `Line To Line Tracing, ${lpm} lines/mm`,
     warn: 'PHOTO = LOW POWER, HIGH SPEED. Start with S-MAX about 20-30% of your max and a fast engraving speed. Full power burns straight through.',
     data: async () => pngDpi(await lzPNG(W, H, dpi, phBody(), false, false, cPh, cMask), dpi) });
-  const isLine = it => it.key.startsWith('frm:') || (it.key === 'orn' && it.ornStyle === 'line') || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
+  const isLine = it => it.key.startsWith('frm:') || (it.key.startsWith('imp:') && roleOf(it) !== 'etchfill') || (it.key === 'orn' && it.ornStyle === 'line') || (it.key.startsWith('t:') && (S.layers.find(l => 't:' + l.id === it.key) || {}).style === 'hollow');
   const wideOrns = S.ornaments.filter(o => o.style === 'line' && o.lineWidth > 0);
   const eWide = wideOrns.length ? etch.filter(it => it.key === 'orn' && it.ornStyle === 'line').map(it => ({ ...it, wide: true })) : [];
   const eThin = etch.filter(it => !(it.key === 'orn' && it.ornStyle === 'line') || wideOrns.length !== S.ornaments.filter(o => o.style === 'line').length);
@@ -1502,7 +1506,7 @@ function laserKeyOfSel() { return sel.img ? 'img:' + sel.slot : sel.orn ? 'orn' 
 function laserUI() {
   const box = $('laserList'); if (!box || box.contains(document.activeElement)) return;
   const sk = laserKeyOfSel();
-  box.innerHTML = laserItems().map(it => `<label class="lrow${it.key === sk ? ' on' : ''}"><span title="${esc(it.name)}">${esc(it.name)}</span><select data-lk="${it.key}">${ROLES.map(([v, t]) => `<option value="${v}"${roleOf(it) === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>`).join('') || '<div class="hint">Nothing to laser yet.</div>';
+  box.innerHTML = laserItems().map(it => `<label class="lrow${it.key === sk ? ' on' : ''}"><span title="${esc(it.name)}">${esc(it.name)}</span><select data-lk="${it.key}">${(it.import ? ROLES_IMP : ROLES).map(([v, t]) => `<option value="${v}"${roleOf(it) === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>`).join('') || '<div class="hint">Nothing to laser yet.</div>';
 }
 function laserOverlay() {
   if (!$('laserPrev') || !$('laserPrev').checked) return '';
@@ -1531,8 +1535,8 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-const APP_VERSION = 'v55';
-const WHATS_NEW = "v55: Send to Waylands Post – preview and make the files there. Your usual Export buttons stay as they are, and a saved copy of v53 is still kept. v54: Save as Wayland design – a file Waylands Path can open too. Send to Waylands Path still works as before. A saved copy of v53 is kept if you need to go back. Your usual Export buttons are unchanged. v53: New Image frame. In Image layers › Placement choose \"Inside my own frame\": a separate shape (oval, rectangle, rounded or your path shape) that trims the picture. Drag its dots to bend it, the side squares to stretch it, the ⟳ to turn it, or type the size. Pull it in to clear letters that sit outside the path. The frame is not burned unless you choose to etch or cut it. Laser files are unchanged unless you use a frame. v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
+const APP_VERSION = 'v56';
+const WHATS_NEW = "v56: Lines sent from Waylands Path now arrive as thin lines (they were solid black blobs) and the laser burns them as lines. v55: Send to Waylands Post – preview and make the files there. Your usual Export buttons stay as they are, and a saved copy of v53 is still kept. v54: Save as Wayland design – a file Waylands Path can open too. Send to Waylands Path still works as before. A saved copy of v53 is kept if you need to go back. Your usual Export buttons are unchanged. v53: New Image frame. In Image layers › Placement choose \"Inside my own frame\": a separate shape (oval, rectangle, rounded or your path shape) that trims the picture. Drag its dots to bend it, the side squares to stretch it, the ⟳ to turn it, or type the size. Pull it in to clear letters that sit outside the path. The frame is not burned unless you choose to etch or cut it. Laser files are unchanged unless you use a frame. v52: New ✏️ Send to Waylands Path button (in Laser and Export). It opens your design in Waylands Path as a new project for line editing - letters arrive as outlines. Your Forge design and laser files are unchanged. v50: Add more text without making a new shape. Tap + Text in the layer bar at the top, T + Add text under Layers, or + Curved text / + Straight text in the Text section. The new text sits on your current shape and uses the usual lettering laser step; no extra outline or cut is made. + Add shape (new outline) is now clearly labelled.";
 $('homeNews') && ($('homeNews').textContent = WHATS_NEW);
 (() => { const w = $('homeNewsWrap'); if (!w) return; const k = 'wfNewsDismissed';
   const show = () => { w.hidden = !$('homeMain').hidden ? localStorage.getItem(k) === APP_VERSION : true; };
@@ -1742,11 +1746,27 @@ async function openWaylandInForge(doc) {
   saveNow();
   const st = defaults(); st.name = r.name || 'Untitled'; st.layers = []; st.ornaments = [];
   if (st.shapes && st.shapes[0] && st.shapes[0].base) { st.shapes[0].base.outer = false; st.shapes[0].base.inner = false; }
-  st.imports = (r.imports || []).map(im => ({ id: im.id || uid(), name: im.name || 'Imported line', role: im.role || 'etch', d: im.d, dMm: im.d, closed: !!im.closed }));
+  const sMm = {}; try { (doc.layers || []).forEach(L => (L.items || []).forEach(it => { if (it && it.id && +it.strokeMm > 0) sMm[it.id] = +it.strokeMm; })); } catch (e) { /* */ }
+  st.imports = (r.imports || []).map(im => { const o = { id: im.id || uid(), name: im.name || 'Imported line', role: im.role || 'etch', d: im.d, dMm: im.d, closed: !!im.closed }; if (sMm[im.id]) o.strokeMm = sMm[im.id]; return o; });
+  let w = (r.artboard && r.artboard.width) || 100, h = (r.artboard && r.artboard.height) || 100;
+  // v56: Path writes its lines in mm from the picture's own corner, not from the page corner, so the drawing can sit off the page
+  // (e.g. 5 mm in and 18 mm down) and its bottom runs off the end. If the lines stick out of the page, slide them so their top-left is the page corner.
+  try {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, okAll = st.imports.length > 0;
+    for (const im of st.imports) { if (!/^[MLCZmlcz0-9\s.,eE+-]*$/.test(im.d || '') || /[mlc]/.test(im.d)) { okAll = false; break; }
+      const nums = (im.d.match(/-?\d*\.?\d+(?:e[+-]?\d+)?/gi) || []).map(Number);
+      for (let i = 0; i + 1 < nums.length; i += 2) { x0 = Math.min(x0, nums[i]); x1 = Math.max(x1, nums[i]); y0 = Math.min(y0, nums[i + 1]); y1 = Math.max(y1, nums[i + 1]); } }
+    if (okAll && isFinite(x0) && (x0 < -0.5 || y0 < -0.5 || x1 > w + 0.5 || y1 > h + 0.5)) {
+      const R = n => +n.toFixed(4);
+      st.imports.forEach(im => { let k = 0; im.d = im.d.replace(/-?\d*\.?\d+(?:e[+-]?\d+)?/gi, m => R(+m - (k++ % 2 ? y0 : x0))); im.dMm = im.d; });
+      w = Math.max(w, R(x1 - x0)); h = Math.max(h, R(y1 - y0));
+    }
+  } catch (e) { /* leave the lines where they are */ }
   openState(st, null);
-  const w = (r.artboard && r.artboard.width) || 100, h = (r.artboard && r.artboard.height) || 100;
   if ($('lzW')) $('lzW').value = w; if ($('lzH')) $('lzH').value = h;
   if ($('exW')) $('exW').value = w; if ($('exH')) $('exH').value = h;
+  try { update(); } catch (e) { /* redraw with the real page size */ }
+  try { fitView(); } catch (e) { /* */ }
   toast('Opened Wayland design as lines. Your usual Export still works.');
 }
 async function shareGet(key) {

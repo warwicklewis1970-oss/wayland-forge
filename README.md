@@ -34,6 +34,16 @@ Once opened, it works offline. Your designs autosave in the browser. To keep a c
 ## Laser pack (LaserGRBL)
 Open **Laser (LaserGRBL)**, give each part a job (Image, Etch, Cut inside edge, Cut outside edge or Skip), type the real size in mm and download the steps. Every file is the same mm page anchored at the laser's 0,0. Letters, ornaments (filled or hollow) and cuts are SVG, which LaserGRBL positions from the page itself, so they always line up: File > Open File > speed and power > Create!. Photo and filled letters are ready-to-run G-code (.nc) with mode, power and speed set in the app (Burn settings: Mode, Power %, Speed per step, no materials): File > Open File > Start, nothing to size or offset (PNG pictures remain as a setting).
 
+## v56 - lines from Waylands Path arrive as lines
+
+Fixed: a design sent from Waylands Path (Send to Wayland Forge, or Save as Wayland design then Open) came in as solid black blobs.
+
+- Cause 1 (what you saw): the on-screen line width was scaled twice, so 0.3 mm lines were drawn about 9 times too thick.
+- Cause 2 (laser): lines from Path were sent to the solid "Etch (fill)" step, which fills every closed outline. They now go to the "etch lines" step (G-code outlines, etch 25% at 3000, 1 pass), the same way Path burns them.
+- Cause 3: Path writes lines from the picture's own corner, so a design could sit 5 mm in and 18 mm down and run off the bottom of the page. Forge now slides lines back so they fill the page, and Fit shows the whole page.
+- New choice in the laser list for each imported line: Etch (lines) or Etch (solid fill). Skip / Cut inside / Cut outside as before.
+- Unchanged: Forge-made designs and their laser files (checked byte for byte), cut files, Path, Post, and the frozen v53 copy.
+
 ## v55 - Send to Waylands Post
 
 The Export and Laser sheets have **📦 Send to Waylands Post (make the files)**. On this same phone or tablet it opens the design in [Waylands Post](https://warwicklewis1970-oss.github.io/waylands-post/). To send it to a laptop, still use **Save as Wayland design**.
